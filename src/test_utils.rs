@@ -1,6 +1,5 @@
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use crate::*;
 
@@ -8,7 +7,7 @@ use crate::*;
 pub type TestResult = Result<(), Error>;
 
 /// Creates a temp directory at `./test_output/[test_name]`, overwriting any existing
-/// files and changes the currect working directory to be there
+/// files
 ///
 /// Returns the path to the directory
 pub fn use_test_dir(test_name: &str) -> Result<PathBuf, std::io::Error> {
@@ -18,7 +17,6 @@ pub fn use_test_dir(test_name: &str) -> Result<PathBuf, std::io::Error> {
 	}
 
 	std::fs::create_dir_all(path.clone())?;
-	std::env::set_current_dir(path.clone())?;
 
 	Ok(path)
 }

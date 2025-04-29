@@ -2,34 +2,59 @@ mod page;
 #[cfg(test)]
 mod tests;
 
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::*;
 use db::*;
-use page::Page;
+pub use page::Page;
 
 const FILE_EXT: &str = "lildb";
+const DB_SUBDIR: &str = "data";
 
-pub type PageId = u32;
+pub type PageId = u64;
 
 /// Reads, writes, and creates pages in a database file
 ///
 /// Page 0 is all metadata
 pub struct DiskManager {
+	pub db_id: DatabaseId,
 	file: File,
-	n_pages: u32,
+	n_pages: u64,
 	/// Linked list of all pages that are not in use (AKA freed)
 	free_list: Option<PageId>,
 }
 
 impl DiskManager {
 	/// Creates a disk manager on top of a new database, erroring if a database with the give name exists
-	pub fn new(db_name: &str, wd_path: &PathBuf) -> Result<Self, Error> {
-		let path = wd_path.join(db_name).with_extension(FILE_EXT);
+	pub fn new(db_name: &str, data_path: &Path) -> Result<Self, Error> {
+		if !data_path.exists() {
+			return Err(Error::new(
+				ActionError,
+				format!("Invalid data path \"{}\"", data_path.to_str().unwrap()),
+			));
+		}
+
+		// create database folder if it doesn't exist
+		let path = data_path.join(DB_SUBDIR);
+		if !path.exists() {
+			if let Err(e) = fs::create_dir(&path) {
+				return Err(Error::wrap(
+					InternalError,
+					"Error while creating data subdirectory",
+					e,
+				));
+			}
+		}
+
+		// check if database exists
+		let path = path.join(db_name).with_extension(FILE_EXT);
 		if path.exists() {
-			return Error::err(ActionError, format!("Database \"{db_name}\" exists"));
+			return Err(Error::new(
+				ActionError,
+				format!("Database \"{db_name}\" exists"),
+			));
 		}
 
 		let file = match OpenOptions::new()
@@ -40,26 +65,30 @@ impl DiskManager {
 		{
 			Ok(f) => f,
 			Err(e) => {
-				return Error::err(IOError, e.to_string());
+				return Err(Error::wrap(
+					InternalError,
+					"Error while opening database file",
+					e,
+				));
 			}
 		};
-		let n_pages: u32 = 1;
 
 		file.set_len(db::PAGE_SIZE as u64)?;
 
 		Ok(DiskManager {
+			db_id: Database::get_id(db_name),
 			file,
-			n_pages,
+			n_pages: 1,
 			free_list: None,
 		})
 	}
 
 	pub fn read_page(&mut self, id: PageId) -> Result<Page, Error> {
 		if id >= self.n_pages {
-			return Error::err(
+			return Err(Error::new(
 				InternalError,
-				format!("Tried to read page that doesn't exist (index: {})", id),
-			);
+				"Attempted to read out-of-bounds page",
+			));
 		}
 
 		let mut buf = [0u8; PAGE_SIZE as usize];
@@ -74,10 +103,10 @@ impl DiskManager {
 
 	pub fn write_page(&mut self, page: &Page) -> Result<(), Error> {
 		if page.id >= self.n_pages {
-			return Error::err(
+			return Err(Error::new(
 				InternalError,
-				format!("Tried to write to invalid page (index: {})", page.id),
-			);
+				"Attempted to write to out-of-bounds page",
+			));
 		}
 
 		self.file

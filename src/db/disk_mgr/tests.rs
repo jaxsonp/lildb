@@ -7,7 +7,7 @@ fn create() -> TestResult {
 	let wd = use_test_dir(name)?;
 
 	DiskManager::new(name, &wd)?;
-	assert!(wd.join(name).with_extension("lildb").exists());
+	assert!(wd.join("data").join(name).with_extension("lildb").exists());
 
 	Ok(())
 }
