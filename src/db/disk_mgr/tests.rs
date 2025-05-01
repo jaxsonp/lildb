@@ -5,7 +5,8 @@ use crate::test_utils::*;
 fn create() -> TestResult {
 	init_testing();
 
-	DiskManager::new("create")?;
+	let name = "create_abc123";
+	DiskManager::new(name)?;
 
 	Ok(())
 }
@@ -43,18 +44,21 @@ fn page_io() -> TestResult {
 	let mut dm = DiskManager::new("page_io")?;
 	let id = dm.new_page()?;
 
-	let mut rand_bytes = [0u8; Page::DATA_LEN];
+	let mut rand_nums = Vec::new();
 	{
 		let mut page = dm.read_page(id)?;
-		for (i, rand_byte) in rand_bytes.iter_mut().enumerate() {
-			*rand_byte = rand::random::<u8>();
-			page.data_mut()[i] = *rand_byte;
+		for i in (0..Page::DATA_LEN).step_by(4) {
+			let num = rand::random::<u32>();
+			page.write_u32(i, num)?;
+			rand_nums.push(num);
 		}
 		dm.write_page(&page)?;
 	}
 
 	let page = dm.read_page(id)?;
-	assert!((0..Page::DATA_LEN).all(|i| page.data()[i] == rand_bytes[i]));
+	assert!((0..Page::DATA_LEN)
+		.step_by(4)
+		.all(|i| page.read_u32(i).unwrap() == rand_nums[i >> 2]));
 
 	Ok(())
 }

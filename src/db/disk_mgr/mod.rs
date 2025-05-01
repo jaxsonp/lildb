@@ -32,11 +32,12 @@ pub struct DiskManager {
 
 impl DiskManager {
 	/// Creates a `DiskManager` on top of a NEW database, erroring if a database with the give name exists
-	pub fn new(db_name: &str) -> Result<Self, Error> {
+	pub fn new<S: Into<String>>(db_name: S) -> Result<Self, Error> {
+		let db_name: String = db_name.into();
 		if db_name.len() > 252 {
 			return Err(Error::new(Action, "Database name is too long"));
 		}
-		let db_id = Database::get_id(db_name);
+		let db_id = Database::get_id(db_name.as_str());
 
 		let data_path = Path::new(DATA_PATH);
 		log::debug!(
@@ -84,29 +85,23 @@ impl DiskManager {
 				));
 			}
 		};
-		file.set_len(db::PAGE_SIZE as u64)?;
+		file.set_len(0)?;
 
 		let mut dm = DiskManager {
-			db_id: Database::get_id(db_name),
-			db_name: db_name.to_owned(),
+			db_id,
+			db_name: db_name.clone(),
 			file,
-			n_pages: 1,
+			n_pages: 0,
 			free_list: None,
 		};
 
-		let mut metadata_page = Page {
-			id: 0,
-			raw: [0u8; PAGE_SIZE as usize],
-		};
-		let metadata = metadata_page.data_mut();
+		// first page is metadata_page
+		let metadata_page_id = dm.new_page()?;
+		let mut metadata = dm.read_page(metadata_page_id)?;
 
-		let name_len_slice: &mut [u8; 4] = &mut metadata[0..4].try_into().unwrap();
-		*name_len_slice = (db_name.len() as u32).to_ne_bytes();
-		let name_slice: &mut [u8; 252] = &mut metadata[4..256].try_into().unwrap();
-		for (i, byte) in db_name.bytes().enumerate() {
-			name_slice[i] = byte;
-		}
-		dm.write_page(&metadata_page)?;
+		metadata.write_u32(0, db_name.len() as u32)?;
+		metadata.write_bytes(4, db_name.as_bytes())?;
+		dm.write_page(&metadata)?;
 
 		Ok(dm)
 	}
@@ -152,26 +147,10 @@ impl DiskManager {
 			free_list: None,
 		};
 
-		let metadata_page = dm.read_page(0)?;
-		let metadata = metadata_page.data();
+		let metadata = dm.read_page(0)?;
 
-		let name_len = u32::from_ne_bytes({
-			let bytes: [u8; 4] = metadata[0..4].try_into().unwrap();
-			bytes
-		}) as usize;
-		let mut name_buf: Vec<u8> = Vec::new();
-		for i in 0..name_len {
-			name_buf.push(metadata[i + 4]);
-		}
-		dm.db_name = match String::from_utf8(name_buf) {
-			Ok(s) => s,
-			Err(_) => {
-				return Err(Error::new(
-					Internal,
-					"Failed to read database name from file",
-				));
-			}
-		};
+		let name_len = metadata.read_u32(0)? as usize;
+		dm.db_name = String::from_utf8_lossy(metadata.read_bytes(4, name_len)?).into_owned();
 
 		Ok(dm)
 	}
@@ -181,13 +160,13 @@ impl DiskManager {
 			return Err(Error::new(Internal, "Attempted to read out-of-bounds page"));
 		}
 
-		let mut buf = [0u8; PAGE_SIZE as usize];
+		let mut buf = [0u8; PAGE_SIZE];
 
 		// getting the data
 		self.file.seek(SeekFrom::Start(PAGE_SIZE as u64 * id))?;
 		self.file.read_exact(&mut buf)?;
 
-		Ok(Page { id, raw: buf })
+		Ok(Page { id, bytes: buf })
 	}
 
 	pub fn write_page(&mut self, page: &Page) -> Result<(), Error> {
@@ -200,8 +179,9 @@ impl DiskManager {
 
 		self.file
 			.seek(SeekFrom::Start(PAGE_SIZE as u64 * page.id))?;
-		self.file.write_all(&page.raw)?;
+		self.file.write_all(&page.bytes)?;
 
+		log::trace!("Writing to id {}", page.id);
 		Ok(())
 	}
 
@@ -212,10 +192,10 @@ impl DiskManager {
 
 			// take page from free list
 			let mut page = self.read_page(id)?;
-			self.free_list = Some(page.next());
+			self.free_list = Some(page.next()?);
 
-			page.set_next(0);
-			page.set_prev(0);
+			page.set_next(0)?;
+			page.set_prev(0)?;
 			self.write_page(&page)?;
 
 			Ok(page.id)
@@ -237,9 +217,9 @@ impl DiskManager {
 		if let Some(old_head) = self.free_list {
 			let mut page = Page {
 				id,
-				raw: [0u8; PAGE_SIZE as usize],
+				bytes: [0u8; PAGE_SIZE],
 			};
-			page.set_next(old_head);
+			page.set_next(old_head)?;
 			self.write_page(&page)?;
 		}
 		self.free_list = Some(id);

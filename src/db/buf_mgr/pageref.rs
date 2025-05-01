@@ -1,31 +1,24 @@
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use super::BufferManager;
 use crate::*;
 use db::*;
 
 /// A reference to a pinned page in the buffer manager
 ///
-/// A `PageRef` instance will unpin itself when dropped
+/// Each `PageRef` instance will unpin itself from the buffer manager when dropped
 pub struct PageRef {
-	page_lock: Arc<RwLock<Page>>,
-	dirty_lock: Arc<Mutex<bool>>,
+	pub(super) page_lock: Arc<RwLock<Page>>,
+	pub(super) dirty_lock: Arc<Mutex<bool>>,
 	/// Index of this page in the buffer pool
 	pub(super) index: usize,
+	/// Database this page is from
+	pub db_id: DatabaseId,
+	/// Page ID
+	pub page_id: PageId,
 }
 
 impl PageRef {
-	pub(super) fn new(
-		page_lock: Arc<RwLock<Page>>,
-		dirty_lock: Arc<Mutex<bool>>,
-		index: usize,
-	) -> PageRef {
-		PageRef {
-			page_lock,
-			dirty_lock,
-			index,
-		}
-	}
-
 	pub fn get(&self) -> Result<RwLockReadGuard<Page>, Error> {
 		Ok(self.page_lock.read()?)
 	}
@@ -42,8 +35,6 @@ impl PageRef {
 }
 impl Drop for PageRef {
 	fn drop(&mut self) {
-		buf_mgr!()
-			.expect("Failed to access buffer manager from PageRef destructor")
-			.unpin(self.index);
+		BufferManager::unpin(self.index).expect("Error while unpinning pageref on drop");
 	}
 }

@@ -2,22 +2,17 @@ mod buf_mgr;
 mod disk_mgr;
 
 use std::hash::Hasher;
-use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use rustc_hash::FxHasher;
 
 use crate::*;
-use buf_mgr::buf_mgr;
 use disk_mgr::{DiskManager, Page, PageId};
 
 pub type DatabaseId = u64;
 
 /// Page size, in bytes
-const PAGE_SIZE: u32 = 4096;
-
-/// Size of buffer pool (max number of pages simulataneously in memory)
-const BUF_POOL_SIZE: usize = if cfg!(test) { 10 } else { 100 };
+const PAGE_SIZE: usize = 4096;
 
 /// Max length of a database name
 const MAX_DB_NAME_LEN: usize = 249;
