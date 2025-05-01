@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::*;
 use db::*;
@@ -7,26 +7,43 @@ use db::*;
 ///
 /// A `PageRef` instance will unpin itself when dropped
 pub struct PageRef {
-	lock: Arc<RwLock<Page>>,
+	page_lock: Arc<RwLock<Page>>,
+	dirty_lock: Arc<Mutex<bool>>,
 	/// Index of this page in the buffer pool
 	pub(super) index: usize,
 }
 
 impl PageRef {
-	pub(super) fn new(lock: Arc<RwLock<Page>>, index: usize) -> PageRef {
-		PageRef { lock, index }
+	pub(super) fn new(
+		page_lock: Arc<RwLock<Page>>,
+		dirty_lock: Arc<Mutex<bool>>,
+		index: usize,
+	) -> PageRef {
+		PageRef {
+			page_lock,
+			dirty_lock,
+			index,
+		}
 	}
 
 	pub fn get(&self) -> Result<RwLockReadGuard<Page>, Error> {
-		Ok(self.lock.read()?)
+		Ok(self.page_lock.read()?)
 	}
 
 	pub fn get_mut(&self) -> Result<RwLockWriteGuard<Page>, Error> {
-		// mark page as dirty
-		let mut buf_mgr = BufferManager::access()?;
-		buf_mgr.buf_pool[self.index].dirty = true;
-		drop(buf_mgr);
+		{
+			// mark page as dirty
+			let mut dirty = self.dirty_lock.lock()?;
+			*dirty = true;
+		}
 
-		Ok(self.lock.write()?)
+		Ok(self.page_lock.write()?)
+	}
+}
+impl Drop for PageRef {
+	fn drop(&mut self) {
+		buf_mgr!()
+			.expect("Failed to access buffer manager from PageRef destructor")
+			.unpin(self.index);
 	}
 }

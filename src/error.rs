@@ -8,44 +8,40 @@ pub struct Error {
 }
 impl Error {
 	pub fn new<S: ToString>(ty: ErrorType, msg: S) -> Error {
-		Error {
+		let e = Error {
 			ty,
 			msg: msg.to_string(),
 			inner: None,
-		}
+		};
+		log::error!("Error generated:\n{}", e);
+		e
 	}
 
 	/// "Wrap" another error with a new error
 	pub fn wrap<S: ToString, E: Into<Error>>(ty: ErrorType, msg: S, inner: E) -> Error {
-		Error {
+		let e = Error {
 			ty,
 			msg: msg.to_string(),
 			inner: Some(Box::new(inner.into())),
-		}
+		};
+		log::error!("Wrapper error generated:\n{}", e);
+		e
 	}
 }
 impl From<std::io::Error> for Error {
 	fn from(e: std::io::Error) -> Error {
-		Error {
-			ty: ErrorType::IOError,
-			msg: e.to_string(),
-			inner: None,
-		}
+		Error::new(ErrorType::IO, e.to_string())
 	}
 }
 impl<T> From<std::sync::PoisonError<T>> for Error {
 	fn from(e: std::sync::PoisonError<T>) -> Error {
-		Error {
-			ty: ErrorType::ConcurrencyError,
-			msg: e.to_string(),
-			inner: None,
-		}
+		Error::new(ErrorType::Concurrency, e.to_string())
 	}
 }
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		if let Some(inner) = &self.inner {
-			write!(f, "{}: {}\n │ {}", self.ty, self.msg, inner)
+			write!(f, "{}: {}\n│ {}", self.ty, self.msg, inner)
 		} else {
 			write!(f, "{}: {}", self.ty, self.msg)
 		}
@@ -55,24 +51,24 @@ impl fmt::Display for Error {
 #[derive(Debug)]
 pub enum ErrorType {
 	/// Errors from invalid user inputs
-	ValidationError,
+	Validation,
 	/// Errors that the user shouldn't be dealing with
-	InternalError,
+	Internal,
 	/// Errors from disk IO
-	IOError,
+	IO,
 	/// Errors from concurrency (threads/sync stuff)
-	ConcurrencyError,
+	Concurrency,
 	/// Errors from a user action
-	ActionError,
+	Action,
 }
 impl fmt::Display for ErrorType {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			ErrorType::ValidationError => write!(f, "ValidationError"),
-			ErrorType::InternalError => write!(f, "InternalError"),
-			ErrorType::IOError => write!(f, "IOError"),
-			ErrorType::ConcurrencyError => write!(f, "ConcurrencyError"),
-			ErrorType::ActionError => write!(f, "ActionError"),
+			ErrorType::Validation => write!(f, "ValidationError"),
+			ErrorType::Internal => write!(f, "InternalError"),
+			ErrorType::IO => write!(f, "IOError"),
+			ErrorType::Concurrency => write!(f, "ConcurrencyError"),
+			ErrorType::Action => write!(f, "ActionError"),
 		}
 	}
 }

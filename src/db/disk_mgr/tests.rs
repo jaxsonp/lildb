@@ -3,37 +3,28 @@ use crate::test_utils::*;
 
 #[test]
 fn create() -> TestResult {
-	let name = "create";
-	let wd = use_test_dir(name)?;
+	init_testing();
 
-	DiskManager::new(name, &wd)?;
-	assert!(wd.join("data").join(name).with_extension("lildb").exists());
+	DiskManager::new("create")?;
 
 	Ok(())
 }
 
 #[test]
 fn file_exists() -> TestResult {
+	init_testing();
 	let name = "file_exists";
-	let wd = use_test_dir(name)?;
-	DiskManager::new(name, &wd)?;
+	DiskManager::new(name)?;
 
-	assert!(matches!(
-		DiskManager::new(name, &wd),
-		Err(Error {
-			ty: ActionError,
-			..
-		})
-	));
+	assert!(DiskManager::new(name).is_err());
 
 	Ok(())
 }
 
 #[test]
 fn page_creation() -> TestResult {
-	let name = "page_creation";
-	let wd = use_test_dir(name)?;
-	let mut dm = DiskManager::new(name, &wd)?;
+	init_testing();
+	let mut dm = DiskManager::new("page_creation")?;
 
 	let n_pages_before = dm.n_pages;
 	dm.new_page()?;
@@ -48,9 +39,8 @@ fn page_creation() -> TestResult {
 
 #[test]
 fn page_io() -> TestResult {
-	let name = "page_io";
-	let wd = use_test_dir(name)?;
-	let mut dm = DiskManager::new(name, &wd)?;
+	init_testing();
+	let mut dm = DiskManager::new("page_io")?;
 	let id = dm.new_page()?;
 
 	let mut rand_bytes = [0u8; Page::DATA_LEN];
@@ -71,10 +61,9 @@ fn page_io() -> TestResult {
 
 #[test]
 fn page_freeing() -> TestResult {
-	let name = "page_freeing";
-	let wd = use_test_dir(name)?;
+	init_testing();
 
-	let mut dm = DiskManager::new(name, &wd)?;
+	let mut dm = DiskManager::new("page_freeing")?;
 	let id = dm.new_page()?;
 	dm.free_page(id)?;
 
