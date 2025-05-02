@@ -19,10 +19,12 @@ pub struct PageRef {
 }
 
 impl PageRef {
+	/// Lock the underlying page for reading
 	pub fn get(&self) -> Result<RwLockReadGuard<Page>, Error> {
 		Ok(self.page_lock.read()?)
 	}
 
+	/// Lock the underlying page for writing, marking it as dirty
 	pub fn get_mut(&self) -> Result<RwLockWriteGuard<Page>, Error> {
 		{
 			// mark page as dirty

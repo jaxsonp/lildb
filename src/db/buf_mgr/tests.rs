@@ -127,7 +127,7 @@ fn sync_db_access() -> TestResult {
 		let dm = dm.clone();
 		threads.push(
 			thread::Builder::new()
-				.name(format!("buffering_sync_db_t{i}"))
+				.name(format!("sync_db_access_t{i}"))
 				.spawn(move || {
 					let mut ids: Vec<PageId> = Vec::new();
 					for _ in 0..5 {
@@ -141,6 +141,46 @@ fn sync_db_access() -> TestResult {
 					}
 
 					for id in ids {
+						let page_ref = BufferManager::pin(id, &dm).unwrap();
+						let page = page_ref.get().unwrap();
+						assert_eq!(page.read_u32(0).unwrap(), id * 10);
+					}
+				})
+				.unwrap(),
+		);
+	}
+	for t in threads {
+		t.join().unwrap();
+	}
+
+	Ok(())
+}
+
+#[test]
+/// Testing synchronous access to the same pages
+fn sync_page_access() -> TestResult {
+	init_testing();
+	let dm = Arc::new(Mutex::new(DiskManager::new("sync_page_access")?));
+
+	let mut page_ids: Vec<PageId> = Vec::new();
+	for _ in 0..10 {
+		let id = dm.lock()?.new_page()?;
+		let page_ref = BufferManager::pin(id, &dm).unwrap();
+		let mut page = page_ref.get_mut().unwrap();
+		page.write_u32(0, id * 10).unwrap();
+
+		page_ids.push(id);
+	}
+
+	let mut threads = Vec::new();
+	for i in 0..MAX_THREADS {
+		let dm = dm.clone();
+		let page_ids = page_ids.clone();
+		threads.push(
+			thread::Builder::new()
+				.name(format!("sync_page_access_t{i}"))
+				.spawn(move || {
+					for id in page_ids {
 						let page_ref = BufferManager::pin(id, &dm).unwrap();
 						let page = page_ref.get().unwrap();
 						assert_eq!(page.read_u32(0).unwrap(), id * 10);
