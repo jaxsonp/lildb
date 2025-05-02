@@ -19,7 +19,7 @@ fn buffering() -> TestResult {
 
 		let page_ref = BufferManager::pin(id, &dm)?;
 		let mut page = page_ref.get_mut()?;
-		page.write_u64(0, id * 10)?;
+		page.write_u32(0, id * 10)?;
 
 		ids.push(id);
 	}
@@ -27,7 +27,7 @@ fn buffering() -> TestResult {
 	for id in ids {
 		let page_ref = BufferManager::pin(id, &dm)?;
 		let page = page_ref.get()?;
-		assert_eq!(page.read_u64(0)?, id * 10);
+		assert_eq!(page.read_u32(0)?, id * 10);
 	}
 
 	Ok(())
@@ -47,7 +47,7 @@ fn full_buf_pool() -> TestResult {
 
 		{
 			let mut page = page_ref.get_mut()?;
-			page.write_u64(0, id * 10)?;
+			page.write_u32(0, id * 10)?;
 		}
 		page_refs.push(page_ref);
 	}
@@ -69,7 +69,7 @@ fn full_buf_pool() -> TestResult {
 
 	for page_ref in page_refs {
 		let page = page_ref.get()?;
-		assert_eq!(page.read_u64(0)?, page_ref.page_id * 10);
+		assert_eq!(page.read_u32(0)?, page_ref.page_id * 10);
 	}
 
 	Ok(())
@@ -94,7 +94,7 @@ fn sync_access() -> TestResult {
 
 						let page_ref = BufferManager::pin(id, &dm).unwrap();
 						let mut page = page_ref.get_mut().unwrap();
-						page.write_u64(0, id * 10).unwrap();
+						page.write_u32(0, id * 10).unwrap();
 
 						ids.push(id);
 					}
@@ -103,7 +103,7 @@ fn sync_access() -> TestResult {
 						let page_ref = BufferManager::pin(id, &dm).unwrap();
 						let page = page_ref.get().unwrap();
 
-						assert_eq!(page.read_u64(0).unwrap(), id * 10);
+						assert_eq!(page.read_u32(0).unwrap(), id * 10);
 					}
 				})
 				.unwrap(),
@@ -135,7 +135,7 @@ fn sync_db_access() -> TestResult {
 
 						let page_ref = BufferManager::pin(id, &dm).unwrap();
 						let mut page = page_ref.get_mut().unwrap();
-						page.write_u64(0, id * 10).unwrap();
+						page.write_u32(0, id * 10).unwrap();
 
 						ids.push(id);
 					}
@@ -143,7 +143,7 @@ fn sync_db_access() -> TestResult {
 					for id in ids {
 						let page_ref = BufferManager::pin(id, &dm).unwrap();
 						let page = page_ref.get().unwrap();
-						assert_eq!(page.read_u64(0).unwrap(), id * 10);
+						assert_eq!(page.read_u32(0).unwrap(), id * 10);
 					}
 				})
 				.unwrap(),

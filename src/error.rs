@@ -60,15 +60,19 @@ pub enum ErrorType {
 	Concurrency,
 	/// Errors from a user action
 	Action,
+	/// Errors from invalid configuration
+	Config,
 }
 impl fmt::Display for ErrorType {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		use ErrorType::*;
 		match self {
-			ErrorType::Validation => write!(f, "ValidationError"),
-			ErrorType::Internal => write!(f, "InternalError"),
-			ErrorType::IO => write!(f, "IOError"),
-			ErrorType::Concurrency => write!(f, "ConcurrencyError"),
-			ErrorType::Action => write!(f, "ActionError"),
+			Validation => write!(f, "ValidationError"),
+			Internal => write!(f, "InternalError"),
+			IO => write!(f, "IOError"),
+			Concurrency => write!(f, "ConcurrencyError"),
+			Action => write!(f, "ActionError"),
+			Config => write!(f, "ConfigError"),
 		}
 	}
 }

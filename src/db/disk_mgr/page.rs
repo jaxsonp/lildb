@@ -3,8 +3,8 @@ use db::*;
 
 // offsets
 const NEXT_OFFSET: usize = 0;
-const PREV_OFFSET: usize = 8;
-const DATA_START_OFFSET: usize = 16;
+const PREV_OFFSET: usize = 4;
+const DATA_START_OFFSET: usize = 8;
 
 /// The raw bytes of a page, loaded into memory
 ///
@@ -23,19 +23,19 @@ impl Page {
 	pub const DATA_LEN: usize = db::PAGE_SIZE - DATA_START_OFFSET;
 
 	pub fn next(&self) -> Result<PageId, Error> {
-		self.read_u64(NEXT_OFFSET)
+		self.read_u32(NEXT_OFFSET)
 	}
 
 	pub fn set_next(&mut self, next: PageId) -> Result<(), Error> {
-		self.write_u64(NEXT_OFFSET, next)
+		self.write_u32(NEXT_OFFSET, next)
 	}
 
 	pub fn prev(&self) -> Result<PageId, Error> {
-		self.read_u64(PREV_OFFSET)
+		self.read_u32(PREV_OFFSET)
 	}
 
 	pub fn set_prev(&mut self, prev: PageId) -> Result<(), Error> {
-		self.write_u64(PREV_OFFSET, prev)
+		self.write_u32(PREV_OFFSET, prev)
 	}
 
 	/*pub fn check_flag(&self) -> bool {

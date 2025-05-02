@@ -5,8 +5,7 @@ use crate::test_utils::*;
 fn create() -> TestResult {
 	init_testing();
 
-	let name = "create_abc123";
-	DiskManager::new(name)?;
+	DiskManager::new("create_dm")?;
 
 	Ok(())
 }
@@ -14,7 +13,7 @@ fn create() -> TestResult {
 #[test]
 fn file_exists() -> TestResult {
 	init_testing();
-	let name = "file_exists";
+	let name = "db_file_exists";
 	DiskManager::new(name)?;
 
 	assert!(DiskManager::new(name).is_err());

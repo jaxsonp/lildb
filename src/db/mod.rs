@@ -1,5 +1,8 @@
 mod buf_mgr;
 mod disk_mgr;
+mod file;
+mod record;
+mod schema;
 
 use std::hash::Hasher;
 use std::sync::{Arc, RwLock};
@@ -8,6 +11,9 @@ use rustc_hash::FxHasher;
 
 use crate::*;
 use disk_mgr::{DiskManager, Page, PageId};
+use file::DbFile;
+use record::Record;
+use schema::Schema;
 
 pub type DatabaseId = u64;
 
@@ -24,7 +30,6 @@ pub struct Database {
 }
 impl Database {
 	pub fn new(name: &str) -> Result<Database, Error> {
-		// TODO implement datapath properly
 		Ok(Self {
 			id: Database::get_id(name),
 			disk_mgr: DiskManager::new(name)?,

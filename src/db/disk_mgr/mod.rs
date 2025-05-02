@@ -2,30 +2,30 @@ mod page;
 #[cfg(test)]
 mod tests;
 
+use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 
 use crate::*;
 use db::*;
 pub use page::Page;
 
-const FILE_EXT: &str = "lildb";
-// TODO make this configurable
-const DATA_PATH: &str = env!("TEST_OUTPUT_DIR"); //"/var/lib/lildb/";
+// metadata page offsets
+const DB_NAME_LEN: usize = 0;
+const DB_NAME: usize = 4;
+const CATALOG_PAGE_ID: usize = 256;
 
-pub type PageId = u64;
+pub type PageId = u32;
 
 /// Reads, writes, and creates pages in a database file
-///
-/// Page 0 is all metadata
-///     0-4: db name len
-///     4-256: db name
 pub struct DiskManager {
 	pub db_id: DatabaseId,
 	pub db_name: String,
 	file: File,
-	n_pages: u64,
+	n_pages: u32,
 	/// Linked list of all pages that are not in use (AKA freed)
 	free_list: Option<PageId>,
 }
@@ -34,125 +34,92 @@ impl DiskManager {
 	/// Creates a `DiskManager` on top of a NEW database, erroring if a database with the give name exists
 	pub fn new<S: Into<String>>(db_name: S) -> Result<Self, Error> {
 		let db_name: String = db_name.into();
+		log::debug!("Creating disk manager for new db {db_name}",);
 		if db_name.len() > 252 {
 			return Err(Error::new(Action, "Database name is too long"));
 		}
 		let db_id = Database::get_id(db_name.as_str());
 
-		let data_path = Path::new(DATA_PATH);
-		log::debug!(
-			"Creating disk manager for new db {db_name} (id {db_id}) at {}",
-			data_path.to_str().unwrap()
-		);
-
-		if !data_path.exists() {
-			return Err(Error::new(
-				Internal,
-				format!("Invalid data path \"{}\"", data_path.to_str().unwrap()),
-			));
+		let db_path = get_root_path()?.join(Database::get_id(&db_name).to_string());
+		// assert that this db dir doesn't exist
+		if db_path.exists() {
+			return Err(Error::new(Action, "Database \"{db_name}\" exists"));
 		}
+		fs::create_dir(&db_path)?;
 
-		// create database folder if it doesn't exist
-		let path = data_path.join("data");
-		if !path.exists() {
-			if let Err(e) = fs::create_dir(&path) {
-				return Err(Error::wrap(
-					Internal,
-					"Error while creating data subdirectory",
-					e,
-				));
-			}
-		}
-
-		// check if database exists
-		let path = path.join(db_id.to_string()).with_extension(FILE_EXT);
-		if path.exists() {
-			return Err(Error::new(Action, format!("Database \"{db_name}\" exists")));
-		}
-
-		let file = match OpenOptions::new()
+		let data_path = db_path.join("database.dat");
+		let file = OpenOptions::new()
 			.read(true)
 			.write(true)
 			.create_new(true)
-			.open(path)
-		{
-			Ok(f) => f,
-			Err(e) => {
-				return Err(Error::wrap(
-					Internal,
-					"Error while opening database file",
-					e,
-				));
-			}
-		};
+			.open(data_path)?;
 		file.set_len(0)?;
 
-		let mut dm = DiskManager {
+		// metadata stuff
+		let metadata = DbMetadata {
+			name: db_name.clone(),
+		};
+		let metadata_path = db_path.join("metadata.toml");
+		let mut metadata_file = OpenOptions::new()
+			.write(true)
+			.create_new(true)
+			.open(metadata_path)?;
+		metadata_file.write_all(toml::to_string_pretty(&metadata).unwrap().as_bytes())?;
+
+		Ok(DiskManager {
 			db_id,
-			db_name: db_name.clone(),
+			db_name,
 			file,
 			n_pages: 0,
 			free_list: None,
-		};
-
-		// first page is metadata_page
-		let metadata_page_id = dm.new_page()?;
-		let mut metadata = dm.read_page(metadata_page_id)?;
-
-		metadata.write_u32(0, db_name.len() as u32)?;
-		metadata.write_bytes(4, db_name.as_bytes())?;
-		dm.write_page(&metadata)?;
-
-		Ok(dm)
+		})
 	}
 
 	/// Creates a new `DiskManager` from an existing database
 	pub fn open(db_id: DatabaseId) -> Result<DiskManager, Error> {
-		let path = Path::new(DATA_PATH)
-			.join("data")
-			.join(db_id.to_string())
-			.with_extension(FILE_EXT);
-		log::debug!(
-			"Creating disk manager on existing db (id {db_id}) at {}",
-			path.to_str().unwrap()
-		);
-		if !path.exists() {
+		log::debug!("Creating disk manager on existing db (id {db_id})",);
+
+		let db_path = get_root_path()?.join(db_id.to_string());
+		// assert that this db dir exists
+		if !db_path.exists() {
 			return Err(Error::new(
 				Internal,
-				format!("Can't find database with id {db_id}"),
+				"Database with ID \"{db_id}\" does not exist",
 			));
 		}
 
-		let file = match OpenOptions::new()
+		let data_path = db_path.join("database.dat");
+		if !db_path.exists() {
+			return Err(Error::new(Internal, "Database file missing"));
+		}
+		let file = OpenOptions::new()
 			.read(true)
 			.write(true)
 			.create_new(true)
-			.open(path)
-		{
-			Ok(f) => f,
-			Err(e) => {
-				return Err(Error::wrap(
-					Internal,
-					"Error while opening database file",
-					e,
-				));
-			}
-		};
+			.open(data_path)?;
 
-		let mut dm = DiskManager {
+		let metadata_path = db_path.join("metadata.toml");
+		if !metadata_path.exists() {
+			return Err(Error::new(Internal, "Metadata file missing"));
+		}
+		let db_name: String =
+			match toml::from_str::<DbMetadata>(fs::read_to_string(metadata_path)?.as_str()) {
+				Ok(metadata) => metadata.name,
+				Err(e) => {
+					return Err(Error::new(
+						Internal,
+						format!("Error while parsing metadata file: {}", e.message()),
+					));
+				}
+			};
+
+		Ok(DiskManager {
 			db_id,
-			db_name: String::new(),
+			db_name,
 			file,
 			n_pages: 1,
 			free_list: None,
-		};
-
-		let metadata = dm.read_page(0)?;
-
-		let name_len = metadata.read_u32(0)? as usize;
-		dm.db_name = String::from_utf8_lossy(metadata.read_bytes(4, name_len)?).into_owned();
-
-		Ok(dm)
+		})
 	}
 
 	pub fn read_page(&mut self, id: PageId) -> Result<Page, Error> {
@@ -163,7 +130,8 @@ impl DiskManager {
 		let mut buf = [0u8; PAGE_SIZE];
 
 		// getting the data
-		self.file.seek(SeekFrom::Start(PAGE_SIZE as u64 * id))?;
+		self.file
+			.seek(SeekFrom::Start(PAGE_SIZE as u64 * id as u64))?;
 		self.file.read_exact(&mut buf)?;
 
 		Ok(Page { id, bytes: buf })
@@ -178,8 +146,9 @@ impl DiskManager {
 		}
 
 		self.file
-			.seek(SeekFrom::Start(PAGE_SIZE as u64 * page.id))?;
+			.seek(SeekFrom::Start(PAGE_SIZE as u64 * page.id as u64))?;
 		self.file.write_all(&page.bytes)?;
+		self.file.flush()?;
 
 		log::trace!("Writing to id {}", page.id);
 		Ok(())
@@ -206,7 +175,8 @@ impl DiskManager {
 			let id: PageId = self.n_pages;
 			self.n_pages += 1;
 
-			self.file.set_len(self.n_pages * db::PAGE_SIZE as u64)?;
+			self.file
+				.set_len(self.n_pages as u64 * db::PAGE_SIZE as u64)?;
 
 			Ok(id)
 		}
@@ -226,4 +196,10 @@ impl DiskManager {
 
 		Ok(())
 	}
+}
+
+/// Metadata about a database, saved to disk
+#[derive(Serialize, Deserialize)]
+struct DbMetadata {
+	name: String,
 }

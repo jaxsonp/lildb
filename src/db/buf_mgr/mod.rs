@@ -248,19 +248,18 @@ impl BufferManager {
 	fn flush(&mut self, index: usize) -> Result<(), Error> {
 		let slot = &mut self.buf_pool[index];
 		let mut dirty = slot.dirty_lock.lock()?;
-		if *dirty {
-			let page = slot.page_lock.read()?;
-
-			if let Some(dm_ref) = self.dm_registry.get(&slot.db_id) {
-				// disk manager is in registry
-
-				if let Some(dm) = dm_ref.upgrade() {
-					// disk manager hasn't been dropped yet
-					dm.lock()?.write_page(&page)?;
-				}
+		if !*dirty {
+			return Ok(());
+		}
+		let page = slot.page_lock.read()?;
+		if let Some(dm_ref) = self.dm_registry.get(&slot.db_id) {
+			// disk manager is in registry
+			if let Some(dm) = dm_ref.upgrade() {
+				// disk manager hasn't been dropped yet
+				dm.lock()?.write_page(&page)?;
+				*dirty = false;
+				return Ok(());
 			}
-
-			*dirty = false;
 		}
 		Ok(())
 	}
