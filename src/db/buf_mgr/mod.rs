@@ -1,4 +1,3 @@
-mod pageref;
 #[cfg(test)]
 mod tests;
 
@@ -13,7 +12,6 @@ use rustc_hash::FxBuildHasher;
 use crate::*;
 use db::*;
 use disk_mgr::DiskManager;
-use pageref::PageRef;
 
 /// How often to check for a free buffer slot when pool is full, in ms
 const POLL_SLEEP_TIME: u64 = 100;
@@ -43,8 +41,8 @@ struct BufPoolSlot {
 	db_id: DatabaseId,
 	/// Which page number is in this slot
 	page_id: PageId,
-	/// The shared ptr to the contained page
-	page_lock: Arc<RwLock<Page>>,
+	/// The shared ptr to the contained page's raw bytes
+	page_bytes: Arc<RwLock<[u8; 4096]>>,
 	/// Number of concurrent holders of this page, when this value is 0 the slot is not in use and
 	/// can be evicted to make room for another page
 	pin_count: u32,
@@ -91,9 +89,12 @@ impl BufferManager {
 	/// will choose the least recently used (LRU) slot, and "evict" it, and load the page from disk
 	/// into that slot
 	///
-	/// The returned `PageRef` will unpin itself when dropped
-	pub fn pin(page_id: PageId, dm: &Arc<Mutex<DiskManager>>) -> Result<PageRef, Error> {
-		log::debug!("Pinning page {page_id} from db \"{}\"", dm.lock()?.db_name,);
+	/// The returned `Page` will unpin itself when dropped
+	pub fn pin(page_id: PageId, dm: &Arc<Mutex<DiskManager>>) -> Result<Page, Error> {
+		log::debug!(
+			"Pinning page {page_id} from db \"{}\"",
+			dm.lock()?.metadata.name,
+		);
 
 		let mut bm = buf_mgr!()?;
 		bm.access_count += 1;
@@ -114,16 +115,17 @@ impl BufferManager {
 			slot.pin_count += 1;
 			slot.last_access = access_count;
 
-			Ok(PageRef {
-				page_lock: slot.page_lock.clone(),
-				dirty_lock: slot.dirty_lock.clone(),
-				index,
+			Ok(Page {
+				id: page_id,
 				db_id,
-				page_id,
+				buf_pool_index: index,
+				bytes: slot.page_bytes.clone(),
+				dirty_lock: slot.dirty_lock.clone(),
 			})
 		} else {
 			// need to read page from disk
-			let raw_page = match dm.lock()?.read_page(page_id) {
+
+			let bytes = match dm.lock()?.read_page(page_id) {
 				Ok(p) => p,
 				Err(e) => {
 					return Err(Error::wrap(Internal, "Error while pinning page", e));
@@ -136,7 +138,7 @@ impl BufferManager {
 				bm.buf_pool.push(BufPoolSlot {
 					db_id,
 					page_id,
-					page_lock: Arc::new(RwLock::new(raw_page)),
+					page_bytes: Arc::new(RwLock::new(bytes)),
 					pin_count: 0,
 					last_access: access_count,
 					dirty_lock: Arc::new(Mutex::new(false)),
@@ -151,12 +153,12 @@ impl BufferManager {
 				let slot = &mut bm.buf_pool[index];
 				slot.pin_count += 1;
 
-				Ok(PageRef {
-					page_lock: slot.page_lock.clone(),
-					dirty_lock: slot.dirty_lock.clone(),
-					index,
+				Ok(Page {
+					id: page_id,
 					db_id,
-					page_id,
+					buf_pool_index: index,
+					bytes: slot.page_bytes.clone(),
+					dirty_lock: slot.dirty_lock.clone(),
 				})
 			} else {
 				// pool is full, choosing a slot to replace
@@ -166,6 +168,7 @@ impl BufferManager {
 				drop(bm);
 
 				let mut i = 0;
+				log::trace!("looking for empty buf pool slot");
 				loop {
 					// choosing which slot to evict
 					let mut choice: Option<usize> = None;
@@ -178,7 +181,7 @@ impl BufferManager {
 						}
 					}
 					if let Some(index) = choice {
-						// found one
+						// found one, evict it
 
 						log::trace!(
 							"Evicting LRU page at index {index} (pin count: {}) ({} ms)",
@@ -186,7 +189,6 @@ impl BufferManager {
 							i * POLL_SLEEP_TIME
 						);
 
-						// evicting
 						bm.flush(index)?;
 						let old_key = (bm.buf_pool[index].db_id, bm.buf_pool[index].page_id);
 						bm.page_index.remove(&old_key);
@@ -195,7 +197,7 @@ impl BufferManager {
 						bm.buf_pool[index] = BufPoolSlot {
 							db_id,
 							page_id,
-							page_lock: Arc::new(RwLock::new(raw_page)),
+							page_bytes: Arc::new(RwLock::new(bytes)),
 							pin_count: 0,
 							last_access: bm.access_count,
 							dirty_lock: Arc::new(Mutex::new(false)),
@@ -206,12 +208,12 @@ impl BufferManager {
 						let slot = &mut bm.buf_pool[index];
 						slot.pin_count += 1;
 
-						break Ok(PageRef {
-							page_lock: slot.page_lock.clone(),
-							dirty_lock: slot.dirty_lock.clone(),
-							index,
+						break Ok(Page {
+							id: page_id,
 							db_id,
-							page_id,
+							buf_pool_index: index,
+							bytes: slot.page_bytes.clone(),
+							dirty_lock: slot.dirty_lock.clone(),
 						});
 					}
 
@@ -228,8 +230,8 @@ impl BufferManager {
 
 	/// Unpins a page, opposite to `pin()`.
 	///
-	/// Should only be called by the PageRef destructor
-	fn unpin(index: usize) -> Result<(), Error> {
+	/// Should only be called by the `Page` destructor
+	pub fn unpin(index: usize) -> Result<(), Error> {
 		let mut bm = buf_mgr!()?;
 		let slot = &mut bm.buf_pool[index];
 		slot.pin_count = slot.pin_count.saturating_sub(1);
@@ -251,16 +253,22 @@ impl BufferManager {
 		if !*dirty {
 			return Ok(());
 		}
-		let page = slot.page_lock.read()?;
+		log::trace!("flushing page at index {index}");
+		let bytes = slot.page_bytes.read()?;
 		if let Some(dm_ref) = self.dm_registry.get(&slot.db_id) {
 			// disk manager is in registry
 			if let Some(dm) = dm_ref.upgrade() {
 				// disk manager hasn't been dropped yet
-				dm.lock()?.write_page(&page)?;
+				dm.lock()?.write_page(slot.page_id, &bytes)?;
 				*dirty = false;
 				return Ok(());
 			}
 		}
+		// TODO test this
+		// need to reopen disk manager
+		let mut dm = DiskManager::reopen(slot.db_id)?;
+		dm.write_page(slot.page_id, &bytes)?;
+		*dirty = false;
 		Ok(())
 	}
 }

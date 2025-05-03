@@ -2,10 +2,9 @@ mod page;
 #[cfg(test)]
 mod tests;
 
-use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,19 +12,18 @@ use crate::*;
 use db::*;
 pub use page::Page;
 
-// metadata page offsets
-const DB_NAME_LEN: usize = 0;
-const DB_NAME: usize = 4;
-const CATALOG_PAGE_ID: usize = 256;
-
 pub type PageId = u32;
 
 /// Reads, writes, and creates pages in a database file
 pub struct DiskManager {
 	pub db_id: DatabaseId,
-	pub db_name: String,
-	file: File,
+	pub metadata: DbFileMetadata,
+	/// Number of pages in this database
 	n_pages: u32,
+	/// Open database file
+	file: File,
+	/// Path to this database's directory
+	path: PathBuf,
 	/// Linked list of all pages that are not in use (AKA freed)
 	free_list: Option<PageId>,
 }
@@ -55,28 +53,21 @@ impl DiskManager {
 			.open(data_path)?;
 		file.set_len(0)?;
 
-		// metadata stuff
-		let metadata = DbMetadata {
-			name: db_name.clone(),
-		};
-		let metadata_path = db_path.join("metadata.toml");
-		let mut metadata_file = OpenOptions::new()
-			.write(true)
-			.create_new(true)
-			.open(metadata_path)?;
-		metadata_file.write_all(toml::to_string_pretty(&metadata).unwrap().as_bytes())?;
-
 		Ok(DiskManager {
 			db_id,
-			db_name,
-			file,
+			metadata: DbFileMetadata {
+				lil_db_version: env!("CARGO_PKG_VERSION").to_owned(),
+				name: db_name.clone(),
+			},
 			n_pages: 0,
+			file,
+			path: db_path,
 			free_list: None,
 		})
 	}
 
 	/// Creates a new `DiskManager` from an existing database
-	pub fn open(db_id: DatabaseId) -> Result<DiskManager, Error> {
+	pub fn reopen(db_id: DatabaseId) -> Result<DiskManager, Error> {
 		log::debug!("Creating disk manager on existing db (id {db_id})",);
 
 		let db_path = get_root_path()?.join(db_id.to_string());
@@ -92,37 +83,50 @@ impl DiskManager {
 		if !db_path.exists() {
 			return Err(Error::new(Internal, "Database file missing"));
 		}
-		let file = OpenOptions::new()
-			.read(true)
-			.write(true)
-			.create_new(true)
-			.open(data_path)?;
+		let file = OpenOptions::new().read(true).write(true).open(data_path)?;
 
-		let metadata_path = db_path.join("metadata.toml");
+		// asserting the file is the right size
+		let file_len = file.metadata().unwrap().len();
+		let n_pages = (file_len / PAGE_SIZE as u64) as u32;
+
+		let metadata_path = db_path.join("metadata.dat");
 		if !metadata_path.exists() {
 			return Err(Error::new(Internal, "Metadata file missing"));
 		}
-		let db_name: String =
-			match toml::from_str::<DbMetadata>(fs::read_to_string(metadata_path)?.as_str()) {
-				Ok(metadata) => metadata.name,
-				Err(e) => {
-					return Err(Error::new(
-						Internal,
-						format!("Error while parsing metadata file: {}", e.message()),
-					));
-				}
-			};
+		let metadata_file = OpenOptions::new().read(true).open(metadata_path.clone())?;
+		let metadata: DbFileMetadata = match rmp_serde::decode::from_read(metadata_file) {
+			Ok(m) => m,
+			Err(e) => {
+				return Err(Error::new(
+					Internal,
+					format!("Error while decoding metadata: {e}"),
+				));
+			}
+		};
+
+		let db_name: String = metadata.name;
+		if metadata.lil_db_version != env!("CARGO_PKG_VERSION") {
+			return Err(Error::new(
+				Config,
+				"Failed to load database saved with incompatible version",
+			));
+		}
 
 		Ok(DiskManager {
 			db_id,
-			db_name,
+			metadata: DbFileMetadata {
+				lil_db_version: env!("CARGO_PKG_VERSION").to_owned(),
+				name: db_name.clone(),
+			},
+			n_pages,
 			file,
-			n_pages: 1,
+			path: db_path,
 			free_list: None,
 		})
 	}
 
-	pub fn read_page(&mut self, id: PageId) -> Result<Page, Error> {
+	/// Reads a page from disk, returning the raw bytes
+	pub fn read_page(&mut self, id: PageId) -> Result<[u8; 4096], Error> {
 		if id >= self.n_pages {
 			return Err(Error::new(Internal, "Attempted to read out-of-bounds page"));
 		}
@@ -134,11 +138,12 @@ impl DiskManager {
 			.seek(SeekFrom::Start(PAGE_SIZE as u64 * id as u64))?;
 		self.file.read_exact(&mut buf)?;
 
-		Ok(Page { id, bytes: buf })
+		Ok(buf)
 	}
 
-	pub fn write_page(&mut self, page: &Page) -> Result<(), Error> {
-		if page.id >= self.n_pages {
+	/// Writes a page's raw bytes to disk
+	pub fn write_page(&mut self, id: PageId, bytes: &[u8; PAGE_SIZE]) -> Result<(), Error> {
+		if id >= self.n_pages {
 			return Err(Error::new(
 				Internal,
 				"Attempted to write to out-of-bounds page",
@@ -146,60 +151,50 @@ impl DiskManager {
 		}
 
 		self.file
-			.seek(SeekFrom::Start(PAGE_SIZE as u64 * page.id as u64))?;
-		self.file.write_all(&page.bytes)?;
+			.seek(SeekFrom::Start(PAGE_SIZE as u64 * id as u64))?;
+		self.file.write_all(bytes)?;
 		self.file.flush()?;
-
-		log::trace!("Writing to id {}", page.id);
 		Ok(())
 	}
 
+	/// Creates space for a new blank page, returning its ID
 	pub fn new_page(&mut self) -> Result<PageId, Error> {
-		log::debug!("Getting new page from \"{}\" file", self.db_name);
-		if let Some(id) = self.free_list {
-			log::trace!("Recycling page {id} from free list");
+		// no free pages to take, so create new one
+		let id: PageId = self.n_pages;
+		log::debug!(
+			"creating new page from \"{}\" file, id {id}",
+			self.metadata.name
+		);
+		self.n_pages += 1;
 
-			// take page from free list
-			let mut page = self.read_page(id)?;
-			self.free_list = Some(page.next()?);
+		self.file
+			.set_len(self.n_pages as u64 * db::PAGE_SIZE as u64)?;
 
-			page.set_next(0)?;
-			page.set_prev(0)?;
-			self.write_page(&page)?;
-
-			Ok(page.id)
-		} else {
-			log::trace!("Creating new page (#{})", self.n_pages);
-
-			// no free pages to take, so create new one
-			let id: PageId = self.n_pages;
-			self.n_pages += 1;
-
-			self.file
-				.set_len(self.n_pages as u64 * db::PAGE_SIZE as u64)?;
-
-			Ok(id)
-		}
+		Ok(id)
 	}
 
 	pub fn free_page(&mut self, id: PageId) -> Result<(), Error> {
-		// insert page into free list
-		if let Some(old_head) = self.free_list {
-			let mut page = Page {
-				id,
-				bytes: [0u8; PAGE_SIZE],
-			};
-			page.set_next(old_head)?;
-			self.write_page(&page)?;
-		}
-		self.free_list = Some(id);
-
-		Ok(())
+		todo!();
+	}
+}
+impl Drop for DiskManager {
+	fn drop(&mut self) {
+		log::trace!("Dropping dm \"{}\" (id {})", self.metadata.name, self.db_id,);
+		// flushing metadata
+		let metadata_path = self.path.join("metadata.dat");
+		let mut metadata_file = OpenOptions::new()
+			.write(true)
+			.create(true)
+			.truncate(true) // overwrite
+			.open(metadata_path)
+			.unwrap();
+		rmp_serde::encode::write(&mut metadata_file, &self.metadata).unwrap();
 	}
 }
 
-/// Metadata about a database, saved to disk
+/// Metadata about a database file, saved to disk
 #[derive(Serialize, Deserialize)]
-struct DbMetadata {
-	name: String,
+pub struct DbFileMetadata {
+	pub lil_db_version: String,
+	pub name: String,
 }

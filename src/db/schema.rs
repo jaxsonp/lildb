@@ -1,9 +1,14 @@
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
 use crate::*;
 use db::*;
 
 /// Represents a table's schema, columns are order-sensitive
 ///
 /// Constructed with a builder-esque pattern
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Schema {
 	pub fixed_len: bool,
 	pub n_cols: usize,
@@ -29,7 +34,7 @@ impl Schema {
 	}
 
 	/// Returns the size of a record with this schema
-	pub fn max_rec_size(&self) -> usize {
+	pub fn rec_size(&self) -> usize {
 		let mut size = 0;
 		for col in self.cols.iter() {
 			size += col.ty.size();
@@ -38,12 +43,14 @@ impl Schema {
 	}
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Column {
 	name: String,
 	ty: ColType,
 	optional: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ColType {
 	/// Boolean
 	Bool,
@@ -57,6 +64,10 @@ pub enum ColType {
 	Long { signed: bool },
 	/// 16 byte int
 	XLong { signed: bool },
+	/// 8 byte float
+	Float,
+	/// 16 byte float
+	Double,
 }
 impl ColType {
 	/// Size of column type in bytes
@@ -69,6 +80,8 @@ impl ColType {
 			Int { .. } => 4,
 			Long { .. } => 8,
 			XLong { .. } => 16,
+			Float => 8,
+			Double => 16,
 		}
 	}
 
@@ -76,5 +89,31 @@ impl ColType {
 	pub fn fixed_len(&self) -> bool {
 		// Have not implemented non-fixed length columns yet
 		true
+	}
+}
+
+impl fmt::Display for ColType {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		use ColType::*;
+		match self {
+			Bool => write!(f, "bool"),
+			XShort { signed } => {
+				write!(f, "{} x-short", if *signed { "signed" } else { "unsigned" })
+			}
+			Short { signed } => {
+				write!(f, "{} short", if *signed { "signed" } else { "unsigned" })
+			}
+			Int { signed } => {
+				write!(f, "{} int", if *signed { "signed" } else { "unsigned" })
+			}
+			Long { signed } => {
+				write!(f, "{} long", if *signed { "signed" } else { "unsigned" })
+			}
+			XLong { signed } => {
+				write!(f, "{} x-long", if *signed { "signed" } else { "unsigned" })
+			}
+			Float => write!(f, "float"),
+			Double => write!(f, "double"),
+		}
 	}
 }

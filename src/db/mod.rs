@@ -10,8 +10,10 @@ use std::sync::{Arc, RwLock};
 use rustc_hash::FxHasher;
 
 use crate::*;
+use buf_mgr::BufferManager;
 use disk_mgr::{DiskManager, Page, PageId};
 use file::DbFile;
+use file::RecordId;
 use record::Record;
 use schema::Schema;
 

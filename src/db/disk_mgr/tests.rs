@@ -5,7 +5,7 @@ use crate::test_utils::*;
 fn create() -> TestResult {
 	init_testing();
 
-	DiskManager::new("create_dm")?;
+	DiskManager::new("disk_mgr_create")?;
 
 	Ok(())
 }
@@ -13,7 +13,7 @@ fn create() -> TestResult {
 #[test]
 fn file_exists() -> TestResult {
 	init_testing();
-	let name = "db_file_exists";
+	let name = "disk_mgr_file_exists";
 	DiskManager::new(name)?;
 
 	assert!(DiskManager::new(name).is_err());
@@ -24,7 +24,7 @@ fn file_exists() -> TestResult {
 #[test]
 fn page_creation() -> TestResult {
 	init_testing();
-	let mut dm = DiskManager::new("page_creation")?;
+	let mut dm = DiskManager::new("disk_mgr_page_creation")?;
 
 	let n_pages_before = dm.n_pages;
 	dm.new_page()?;
@@ -40,35 +40,24 @@ fn page_creation() -> TestResult {
 #[test]
 fn page_io() -> TestResult {
 	init_testing();
-	let mut dm = DiskManager::new("page_io")?;
+	let mut dm = DiskManager::new("disk_mgr_page_io")?;
 	let id = dm.new_page()?;
 
 	let mut rand_nums = Vec::new();
 	{
-		let mut page = dm.read_page(id)?;
+		let mut bytes = dm.read_page(id)?;
 		for i in (0..Page::DATA_LEN).step_by(4) {
-			let num = rand::random::<u32>();
-			page.write_u32(i, num)?;
+			let num = rand::random::<u8>();
+			bytes[i] = num;
 			rand_nums.push(num);
 		}
-		dm.write_page(&page)?;
+		dm.write_page(id, &bytes)?;
 	}
 
-	let page = dm.read_page(id)?;
+	let bytes = dm.read_page(id)?;
 	assert!((0..Page::DATA_LEN)
 		.step_by(4)
-		.all(|i| page.read_u32(i).unwrap() == rand_nums[i >> 2]));
-
-	Ok(())
-}
-
-#[test]
-fn page_freeing() -> TestResult {
-	init_testing();
-
-	let mut dm = DiskManager::new("page_freeing")?;
-	let id = dm.new_page()?;
-	dm.free_page(id)?;
+		.all(|i| bytes[i] == rand_nums[i >> 2]));
 
 	Ok(())
 }
