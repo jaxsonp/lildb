@@ -3,7 +3,7 @@ use crate::test_utils::*;
 
 #[test]
 fn create() -> TestResult {
-	init_testing();
+	start_test!();
 
 	DiskManager::new("disk_mgr_create")?;
 
@@ -12,7 +12,7 @@ fn create() -> TestResult {
 
 #[test]
 fn file_exists() -> TestResult {
-	init_testing();
+	start_test!();
 	let name = "disk_mgr_file_exists";
 	DiskManager::new(name)?;
 
@@ -23,7 +23,7 @@ fn file_exists() -> TestResult {
 
 #[test]
 fn page_creation() -> TestResult {
-	init_testing();
+	start_test!();
 	let mut dm = DiskManager::new("disk_mgr_page_creation")?;
 
 	let n_pages_before = dm.n_pages;
@@ -39,7 +39,7 @@ fn page_creation() -> TestResult {
 
 #[test]
 fn page_io() -> TestResult {
-	init_testing();
+	start_test!();
 	let mut dm = DiskManager::new("disk_mgr_page_io")?;
 	let id = dm.new_page()?;
 

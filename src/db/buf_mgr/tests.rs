@@ -9,7 +9,7 @@ const MAX_THREADS: usize = 25;
 
 #[test]
 fn buffering() -> TestResult {
-	init_testing();
+	start_test!();
 	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_buffering")?));
 
 	let n = BufferManager::POOL_SIZE;
@@ -34,7 +34,7 @@ fn buffering() -> TestResult {
 #[test]
 /// Testing not being able to pin a page when all buffer manager pool slots are taken
 fn full_buf_pool() -> TestResult {
-	init_testing();
+	start_test!();
 	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_pool_full")?));
 
 	let n = BufferManager::POOL_SIZE;
@@ -53,13 +53,13 @@ fn full_buf_pool() -> TestResult {
 		let _page_ref = BufferManager::pin(new_id, &dm).unwrap();
 	});
 
-	thread::sleep(Duration::from_secs(1));
+	thread::sleep(Duration::from_millis(500));
 	assert!(!thread.is_finished());
 
 	// unpinning last page
 	let _ = pages.pop();
 
-	thread::sleep(Duration::from_secs_f32(0.5));
+	thread::sleep(Duration::from_millis(500));
 	assert!(thread.is_finished());
 
 	for page in pages {
@@ -72,7 +72,7 @@ fn full_buf_pool() -> TestResult {
 #[test]
 /// Testing synchronous access on different databases simulataneously
 fn sync_access() -> TestResult {
-	init_testing();
+	start_test!();
 
 	let mut threads = Vec::new();
 	for i in 0..MAX_THREADS {
@@ -109,7 +109,7 @@ fn sync_access() -> TestResult {
 #[test]
 /// Testing synchronous access to the SAME database
 fn sync_db_access() -> TestResult {
-	init_testing();
+	start_test!();
 	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_sync_db_access")?));
 
 	let mut threads = Vec::new();
@@ -147,7 +147,7 @@ fn sync_db_access() -> TestResult {
 #[test]
 /// Testing synchronous access to the same pages
 fn sync_page_access() -> TestResult {
-	init_testing();
+	start_test!();
 	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_sync_page_access")?));
 
 	let mut page_ids: Vec<PageId> = Vec::new();
