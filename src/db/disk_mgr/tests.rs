@@ -24,15 +24,15 @@ fn file_exists() -> TestResult {
 #[test]
 fn page_creation() -> TestResult {
 	start_test!();
-	let mut dm = DiskManager::new("disk_mgr_page_creation")?;
+	let dm = DiskManager::new("disk_mgr_page_creation")?;
 
-	let n_pages_before = dm.n_pages;
+	let n_pages_before = *dm.n_pages.read()?;
 	dm.new_page()?;
-	assert_eq!(dm.n_pages, n_pages_before + 1);
+	assert_eq!(*dm.n_pages.read()?, n_pages_before + 1);
 	dm.new_page()?;
 	dm.new_page()?;
 	dm.new_page()?;
-	assert_eq!(dm.n_pages, n_pages_before + 4);
+	assert_eq!(*dm.n_pages.read()?, n_pages_before + 4);
 
 	Ok(())
 }
@@ -40,7 +40,7 @@ fn page_creation() -> TestResult {
 #[test]
 fn page_io() -> TestResult {
 	start_test!();
-	let mut dm = DiskManager::new("disk_mgr_page_io")?;
+	let dm = DiskManager::new("disk_mgr_page_io")?;
 	let id = dm.new_page()?;
 
 	let mut rand_nums = Vec::new();

@@ -10,22 +10,22 @@ const MAX_THREADS: usize = 25;
 #[test]
 fn buffering() -> TestResult {
 	start_test!();
-	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_buffering")?));
+	let dm = Arc::new(DiskManager::new("buf_mgr_buffering")?);
 
 	let n = BufferManager::POOL_SIZE;
 	let mut ids: Vec<PageId> = Vec::new();
 	for _ in 0..(n + 5) {
-		let id = dm.lock()?.new_page()?;
+		let id = dm.new_page()?;
 
 		let page = BufferManager::pin(id, &dm)?;
-		page.write_u32(0, id * 10)?;
+		page.write_u32(0u8, id * 10)?;
 
 		ids.push(id);
 	}
 
 	for id in ids {
 		let page = BufferManager::pin(id, &dm)?;
-		assert_eq!(page.read_u32(0)?, id * 10);
+		assert_eq!(page.read_u32(0u8)?, id * 10);
 	}
 
 	Ok(())
@@ -35,20 +35,20 @@ fn buffering() -> TestResult {
 /// Testing not being able to pin a page when all buffer manager pool slots are taken
 fn full_buf_pool() -> TestResult {
 	start_test!();
-	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_pool_full")?));
+	let dm = Arc::new(DiskManager::new("buf_mgr_pool_full")?);
 
 	let n = BufferManager::POOL_SIZE;
 	let mut pages: Vec<Page> = Vec::new();
 	for _ in 0..n {
-		let id = dm.lock()?.new_page()?;
+		let id = dm.new_page()?;
 		let page = BufferManager::pin(id, &dm)?;
 
-		page.write_u32(0, id * 10)?;
+		page.write_u32(0u8, id * 10)?;
 		pages.push(page);
 	}
 
 	// background thread that tries to pin one more page, shouldn't exit until main thread unpins a page
-	let new_id = dm.lock().unwrap().new_page().unwrap();
+	let new_id = dm.new_page().unwrap();
 	let thread = thread::spawn(move || {
 		let _page_ref = BufferManager::pin(new_id, &dm).unwrap();
 	});
@@ -63,7 +63,7 @@ fn full_buf_pool() -> TestResult {
 	assert!(thread.is_finished());
 
 	for page in pages {
-		assert_eq!(page.read_u32(0)?, page.id * 10);
+		assert_eq!(page.read_u32(0u8)?, page.id * 10);
 	}
 
 	Ok(())
@@ -77,23 +77,23 @@ fn sync_access() -> TestResult {
 	let mut threads = Vec::new();
 	for i in 0..MAX_THREADS {
 		let name = format!("buf_mgr_sync_access_t{i}");
-		let dm = Arc::new(Mutex::new(DiskManager::new(name.clone())?));
+		let dm = Arc::new(DiskManager::new(name.clone())?);
 		threads.push(
 			thread::Builder::new()
 				.name(name)
 				.spawn(move || {
 					let mut ids: Vec<PageId> = Vec::new();
 					for _ in 0..5 {
-						let id = dm.lock().unwrap().new_page().unwrap();
+						let id = dm.new_page().unwrap();
 						ids.push(id);
 
 						let page = BufferManager::pin(id, &dm).unwrap();
-						page.write_u32(0, id * 10).unwrap();
+						page.write_u32(0u8, id * 10).unwrap();
 					}
 
 					for id in ids {
 						let page = BufferManager::pin(id, &dm).unwrap();
-						assert_eq!(page.read_u32(0).unwrap(), id * 10);
+						assert_eq!(page.read_u32(0u8).unwrap(), id * 10);
 					}
 				})
 				.unwrap(),
@@ -110,7 +110,7 @@ fn sync_access() -> TestResult {
 /// Testing synchronous access to the SAME database
 fn sync_db_access() -> TestResult {
 	start_test!();
-	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_sync_db_access")?));
+	let dm = Arc::new(DiskManager::new("buf_mgr_sync_db_access")?);
 
 	let mut threads = Vec::new();
 	for i in 0..MAX_THREADS {
@@ -121,17 +121,17 @@ fn sync_db_access() -> TestResult {
 				.spawn(move || {
 					let mut ids: Vec<PageId> = Vec::new();
 					for _ in 0..5 {
-						let id = dm.lock().unwrap().new_page().unwrap();
+						let id = dm.new_page().unwrap();
 
 						let page = BufferManager::pin(id, &dm).unwrap();
-						page.write_u32(0, id * 10).unwrap();
+						page.write_u32(0u8, id * 10).unwrap();
 
 						ids.push(id);
 					}
 
 					for id in ids {
 						let page = BufferManager::pin(id, &dm).unwrap();
-						assert_eq!(page.read_u32(0).unwrap(), id * 10);
+						assert_eq!(page.read_u32(0u8).unwrap(), id * 10);
 					}
 				})
 				.unwrap(),
@@ -148,13 +148,13 @@ fn sync_db_access() -> TestResult {
 /// Testing synchronous access to the same pages
 fn sync_page_access() -> TestResult {
 	start_test!();
-	let dm = Arc::new(Mutex::new(DiskManager::new("buf_mgr_sync_page_access")?));
+	let dm = Arc::new(DiskManager::new("buf_mgr_sync_page_access")?);
 
 	let mut page_ids: Vec<PageId> = Vec::new();
 	for _ in 0..10 {
-		let id = dm.lock()?.new_page()?;
+		let id = dm.new_page()?;
 		let page = BufferManager::pin(id, &dm).unwrap();
-		page.write_u32(0, id * 10).unwrap();
+		page.write_u32(0u8, id * 10).unwrap();
 
 		page_ids.push(id);
 	}
@@ -169,7 +169,7 @@ fn sync_page_access() -> TestResult {
 				.spawn(move || {
 					for id in page_ids {
 						let page = BufferManager::pin(id, &dm).unwrap();
-						assert_eq!(page.read_u32(0).unwrap(), id * 10);
+						assert_eq!(page.read_u32(0u8).unwrap(), id * 10);
 					}
 				})
 				.unwrap(),

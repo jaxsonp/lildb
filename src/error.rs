@@ -7,7 +7,10 @@ pub struct Error {
 	pub(crate) inner: Option<Box<Error>>,
 }
 impl Error {
-	pub fn new<S: ToString>(ty: ErrorType, msg: S) -> Error {
+	pub fn new<S>(ty: ErrorType, msg: S) -> Error
+	where
+		S: ToString,
+	{
 		let e = Error {
 			ty,
 			msg: msg.to_string(),
@@ -18,7 +21,11 @@ impl Error {
 	}
 
 	/// "Wrap" another error with a new error
-	pub fn wrap<S: ToString, E: Into<Error>>(ty: ErrorType, msg: S, inner: E) -> Error {
+	pub fn wrap<S, E>(ty: ErrorType, msg: S, inner: E) -> Error
+	where
+		S: ToString,
+		E: Into<Error>,
+	{
 		let e = Error {
 			ty,
 			msg: msg.to_string(),

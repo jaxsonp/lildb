@@ -5,6 +5,7 @@ mod tests;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::{Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,10 +19,10 @@ pub type PageId = u32;
 pub struct DiskManager {
 	pub db_id: DatabaseId,
 	pub metadata: DbFileMetadata,
-	/// Number of pages in this database
-	n_pages: u32,
 	/// Open database file
-	file: File,
+	file: Mutex<File>,
+	/// Number of pages
+	n_pages: RwLock<u32>,
 	/// Path to this database's directory
 	path: PathBuf,
 	/// Linked list of all pages that are not in use (AKA freed)
@@ -32,7 +33,6 @@ impl DiskManager {
 	/// Creates a `DiskManager` on top of a NEW database, erroring if a database with the give name exists
 	pub fn new<S: Into<String>>(db_name: S) -> Result<Self, Error> {
 		let db_name: String = db_name.into();
-		log::debug!("Creating disk manager for new db {db_name}",);
 		if db_name.len() > 252 {
 			return Err(Error::new(Action, "Database name is too long"));
 		}
@@ -53,14 +53,25 @@ impl DiskManager {
 			.open(data_path)?;
 		file.set_len(0)?;
 
+		let metadata = DbFileMetadata {
+			lil_db_version: env!("CARGO_PKG_VERSION").to_owned(),
+			name: db_name.clone(),
+		};
+		let metadata_path = db_path.join("metadata.dat");
+		let mut metadata_file = OpenOptions::new()
+			.write(true)
+			.create(true)
+			.truncate(true) // overwrite
+			.open(metadata_path)?;
+		metadata_file
+			.write_all(metadata.as_bytes()?.as_slice())
+			.map_err(|e| Error::wrap(Internal, "Error while writing file metadata", e))?;
+
 		Ok(DiskManager {
 			db_id,
-			metadata: DbFileMetadata {
-				lil_db_version: env!("CARGO_PKG_VERSION").to_owned(),
-				name: db_name.clone(),
-			},
-			n_pages: 0,
-			file,
+			metadata,
+			file: Mutex::new(file),
+			n_pages: RwLock::new(0),
 			path: db_path,
 			free_list: None,
 		})
@@ -68,8 +79,6 @@ impl DiskManager {
 
 	/// Creates a new `DiskManager` from an existing database
 	pub fn reopen(db_id: DatabaseId) -> Result<DiskManager, Error> {
-		log::debug!("Creating disk manager on existing db (id {db_id})",);
-
 		let db_path = get_root_path()?.join(db_id.to_string());
 		// assert that this db dir exists
 		if !db_path.exists() {
@@ -85,24 +94,24 @@ impl DiskManager {
 		}
 		let file = OpenOptions::new().read(true).write(true).open(data_path)?;
 
-		// asserting the file is the right size
-		let file_len = file.metadata().unwrap().len();
-		let n_pages = (file_len / PAGE_SIZE as u64) as u32;
-
 		let metadata_path = db_path.join("metadata.dat");
 		if !metadata_path.exists() {
-			return Err(Error::new(Internal, "Metadata file missing"));
+			return Err(Error::new(
+				Internal,
+				format!(
+					"Metadata file missing (at {})",
+					metadata_path.to_str().unwrap()
+				),
+			));
 		}
-		let metadata_file = OpenOptions::new().read(true).open(metadata_path.clone())?;
-		let metadata: DbFileMetadata = match rmp_serde::decode::from_read(metadata_file) {
-			Ok(m) => m,
-			Err(e) => {
-				return Err(Error::new(
-					Internal,
-					format!("Error while decoding metadata: {e}"),
-				));
-			}
-		};
+		let mut metadata_file = OpenOptions::new()
+			.read(true)
+			.open(metadata_path)
+			.map_err(|e| Error::wrap(Internal, "Error while opening metadata file", e))?;
+
+		let mut buf = Vec::new();
+		metadata_file.read_to_end(&mut buf)?;
+		let metadata = DbFileMetadata::from_bytes(buf.as_slice())?;
 
 		let db_name: String = metadata.name;
 		if metadata.lil_db_version != env!("CARGO_PKG_VERSION") {
@@ -112,68 +121,58 @@ impl DiskManager {
 			));
 		}
 
+		let n_pages = file.metadata()?.len() as usize / PAGE_SIZE;
+
 		Ok(DiskManager {
 			db_id,
 			metadata: DbFileMetadata {
 				lil_db_version: env!("CARGO_PKG_VERSION").to_owned(),
 				name: db_name.clone(),
 			},
-			n_pages,
-			file,
+			file: Mutex::new(file),
+			n_pages: RwLock::new(n_pages as u32),
 			path: db_path,
 			free_list: None,
 		})
 	}
 
 	/// Reads a page from disk, returning the raw bytes
-	pub fn read_page(&mut self, id: PageId) -> Result<[u8; 4096], Error> {
-		if id >= self.n_pages {
-			return Err(Error::new(Internal, "Attempted to read out-of-bounds page"));
-		}
-
+	pub fn read_page(&self, id: PageId) -> Result<[u8; 4096], Error> {
 		let mut buf = [0u8; PAGE_SIZE];
 
 		// getting the data
-		self.file
-			.seek(SeekFrom::Start(PAGE_SIZE as u64 * id as u64))?;
-		self.file.read_exact(&mut buf)?;
+		let mut file = self.file.lock()?;
+		file.seek(SeekFrom::Start(PAGE_SIZE as u64 * id as u64))?;
+		file.read_exact(&mut buf)
+			.map_err(|e| Error::wrap(Internal, "Error while reading bytes from file", e))?;
 
 		Ok(buf)
 	}
 
 	/// Writes a page's raw bytes to disk
-	pub fn write_page(&mut self, id: PageId, bytes: &[u8; PAGE_SIZE]) -> Result<(), Error> {
-		if id >= self.n_pages {
-			return Err(Error::new(
-				Internal,
-				"Attempted to write to out-of-bounds page",
-			));
-		}
-
-		self.file
-			.seek(SeekFrom::Start(PAGE_SIZE as u64 * id as u64))?;
-		self.file.write_all(bytes)?;
-		self.file.flush()?;
+	pub fn write_page(&self, id: PageId, bytes: &[u8; PAGE_SIZE]) -> Result<(), Error> {
+		let mut file = self.file.lock()?;
+		file.seek(SeekFrom::Start(PAGE_SIZE as u64 * id as u64))?;
+		file.write_all(bytes)?;
+		file.flush()?;
 		Ok(())
 	}
 
 	/// Creates space for a new blank page, returning its ID
-	pub fn new_page(&mut self) -> Result<PageId, Error> {
-		// no free pages to take, so create new one
-		let id: PageId = self.n_pages;
-		log::debug!(
-			"creating new page from \"{}\" file, id {id}",
-			self.metadata.name
-		);
-		self.n_pages += 1;
-
+	///
+	/// TODO get from free list
+	pub fn new_page(&self) -> Result<PageId, Error> {
+		let mut page_count = self.n_pages.write()?;
+		let id: PageId = *page_count;
+		*page_count += 1;
 		self.file
-			.set_len(self.n_pages as u64 * db::PAGE_SIZE as u64)?;
+			.lock()?
+			.set_len(*page_count as u64 * db::PAGE_SIZE as u64)?;
 
 		Ok(id)
 	}
 
-	pub fn free_page(&mut self, id: PageId) -> Result<(), Error> {
+	pub fn free_page(&self, id: PageId) -> Result<(), Error> {
 		todo!();
 	}
 }
@@ -181,14 +180,6 @@ impl Drop for DiskManager {
 	fn drop(&mut self) {
 		log::trace!("Dropping dm \"{}\" (id {})", self.metadata.name, self.db_id,);
 		// flushing metadata
-		let metadata_path = self.path.join("metadata.dat");
-		let mut metadata_file = OpenOptions::new()
-			.write(true)
-			.create(true)
-			.truncate(true) // overwrite
-			.open(metadata_path)
-			.unwrap();
-		rmp_serde::encode::write(&mut metadata_file, &self.metadata).unwrap();
 	}
 }
 
@@ -197,4 +188,19 @@ impl Drop for DiskManager {
 pub struct DbFileMetadata {
 	pub lil_db_version: String,
 	pub name: String,
+}
+impl DbFileMetadata {
+	pub fn as_bytes(&self) -> Result<Vec<u8>, Error> {
+		rmp_serde::to_vec(self)
+			.map_err(|e| Error::new(Internal, format!("Error while encoding metadata ({e})")))
+	}
+
+	pub fn from_bytes(bytes: &[u8]) -> Result<DbFileMetadata, Error> {
+		rmp_serde::from_slice(bytes).map_err(|e| {
+			Error::new(
+				Internal,
+				format!("Error while decoding file metadata ({e})"),
+			)
+		})
+	}
 }

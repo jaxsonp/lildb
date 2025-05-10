@@ -1,5 +1,5 @@
 use std::any::type_name;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::*;
 use db::*;
@@ -9,16 +9,16 @@ const NEXT_PAGE_OFFSET: usize = 0;
 const PREV_PAGE_OFFSET: usize = 4;
 const DATA_START_OFFSET: usize = 8;
 
-/// Represents a shared reference to a page loaded in the buffer pool. Each `Page` is
-/// interior-mutable
+/// Represents a shared reference to a page loaded in the buffer pool. With `next` and `prev`
+/// values in the header for use in storage in a data structure
 ///
-/// data format:
+/// Data format:
 /// ```text
 /// 0      4      8
 /// | next | prev | page data ...
 /// ```
 ///
-/// * Uses little endian for number (de)serialization
+/// Uses little endian for number (de)serialization
 #[derive(Clone)]
 pub struct Page {
 	/// This page's ID in its database
@@ -36,22 +36,43 @@ impl Page {
 	pub const DATA_LEN: usize = db::PAGE_SIZE - DATA_START_OFFSET;
 
 	pub fn next(&self) -> Result<PageId, Error> {
-		self.read_u32(NEXT_PAGE_OFFSET)
+		Ok(u32::from_le_bytes(
+			self.read_raw_bytes(NEXT_PAGE_OFFSET, size_of::<u32>())?
+				.try_into()
+				.unwrap(),
+		))
 	}
 
 	pub fn set_next(&self, next: PageId) -> Result<(), Error> {
-		self.write_u32(NEXT_PAGE_OFFSET, next)
+		*self.dirty_lock.lock()? = true;
+		self.write_raw_bytes(NEXT_PAGE_OFFSET, &next.to_le_bytes())
 	}
 
 	pub fn prev(&self) -> Result<PageId, Error> {
-		self.read_u32(PREV_PAGE_OFFSET)
+		Ok(u32::from_le_bytes(
+			self.read_raw_bytes(PREV_PAGE_OFFSET, size_of::<u32>())?
+				.try_into()
+				.unwrap(),
+		))
 	}
 
 	pub fn set_prev(&mut self, prev: PageId) -> Result<(), Error> {
-		self.write_u32(PREV_PAGE_OFFSET, prev)
+		*self.dirty_lock.lock()? = true;
+		self.write_raw_bytes(PREV_PAGE_OFFSET, &prev.to_le_bytes())
 	}
 
-	pub fn read_bytes(&self, offset: usize, length: usize) -> Result<Vec<u8>, Error> {
+	/// Read bytes from the page's data
+	pub fn read_bytes<N: Into<usize>>(&self, offset: N, length: N) -> Result<Vec<u8>, Error> {
+		self.read_raw_bytes(DATA_START_OFFSET + offset.into(), length.into())
+	}
+
+	/// Write bytes to the page's data
+	pub fn write_bytes<N: Into<usize>>(&self, offset: N, bytes: &[u8]) -> Result<(), Error> {
+		self.write_raw_bytes(DATA_START_OFFSET + offset.into(), bytes)
+	}
+
+	/// Read arbitrary bytes from anywhere in this page
+	fn read_raw_bytes(&self, offset: usize, length: usize) -> Result<Vec<u8>, Error> {
 		let end = offset.saturating_add(length);
 		if end > PAGE_SIZE {
 			return Err(Error::new(Internal, "Tried to read bytes out of bounds"));
@@ -61,7 +82,8 @@ impl Page {
 		Ok(bytes)
 	}
 
-	pub fn write_bytes(&self, offset: usize, bytes: &[u8]) -> Result<(), Error> {
+	/// Write arbitrary bytes to anywhere in this page
+	fn write_raw_bytes(&self, offset: usize, bytes: &[u8]) -> Result<(), Error> {
 		let end = offset.saturating_add(bytes.len());
 		if end > PAGE_SIZE {
 			return Err(Error::new(Internal, "Tried to write bytes out of bounds"));
@@ -81,7 +103,8 @@ impl Drop for Page {
 macro_rules! read_write_functions {
 	{$(<$ty:ty> => ($read:ident, $write:ident))*} => {
         impl Page {
-            $(pub fn $read(&self, offset: usize) -> Result<$ty, Error> {
+            $(pub fn $read<Offset: Into<usize>>(&self, offset: Offset) -> Result<$ty, Error> {
+                let offset = offset.into();
                 if offset + size_of::<$ty>() >= PAGE_SIZE {
                     return Err(Error::new(Internal, format!("Tried to read {} out of bounds", type_name::<$ty>())));
                 }
@@ -91,7 +114,8 @@ macro_rules! read_write_functions {
                         .unwrap(),
                 ))
             }
-            pub fn $write(&self, offset: usize, val: $ty) -> Result<(), Error> {
+            pub fn $write<Offset: Into<usize>>(&self, offset: Offset, val: $ty) -> Result<(), Error> {
+                let offset = offset.into();
                 if offset + size_of::<$ty>() >= PAGE_SIZE {
                     return Err(Error::new(Internal, format!("Tried to write {} out of bounds", type_name::<$ty>())));
                 }

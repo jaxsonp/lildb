@@ -2,11 +2,10 @@
 mod tests;
 
 use std::collections::HashMap;
-use std::sync::{Mutex, Weak};
+use std::sync::{Arc, LazyLock, Mutex, RwLock, Weak};
 use std::thread::sleep;
 use std::time::Duration;
 
-use lazy_static::lazy_static;
 use rustc_hash::FxBuildHasher;
 
 use crate::*;
@@ -16,22 +15,16 @@ use disk_mgr::DiskManager;
 /// How often to check for a free buffer slot when pool is full, in ms
 const POLL_SLEEP_TIME: u64 = 100;
 
-lazy_static! {
-	/// THE global buffer manager, access through `buf_mgr!()`
-	pub(crate) static ref GLOBAL_BUF_MGR: Arc<Mutex<BufferManager>> = Arc::new(Mutex::new(BufferManager::new()));
-}
+/// THE global buffer manager, access through `buf_mgr!()`
+pub(crate) static GLOBAL_BUF_MGR: LazyLock<Arc<Mutex<BufferManager>>> =
+	LazyLock::new(|| Arc::new(Mutex::new(BufferManager::new())));
 
 /// Convenience macro to lock and gain access to the global buffer manager
 macro_rules! buf_mgr {
 	() => {
-		match crate::db::buf_mgr::GLOBAL_BUF_MGR.lock() {
-			Ok(lock) => Ok(lock),
-			Err(e) => Err(Error::wrap(
-				Internal,
-				"Error while accessing global buffer manager",
-				e,
-			)),
-		}
+		crate::db::buf_mgr::GLOBAL_BUF_MGR
+			.lock()
+			.map_err(|e| Error::wrap(Internal, "Error while accessing global buffer manager", e))
 	};
 }
 
@@ -64,7 +57,7 @@ pub struct BufferManager {
 	/// Ticks up every slot access, used by each slot to track order of accesses
 	access_count: u128,
 	/// Remembers disk managers for when its time to flush pages
-	dm_registry: HashMap<DatabaseId, Weak<Mutex<DiskManager>>, FxBuildHasher>,
+	dm_registry: HashMap<DatabaseId, Weak<DiskManager>, FxBuildHasher>,
 }
 impl BufferManager {
 	/// Size of buffer pool (max number of pages simulataneously in memory)
@@ -72,7 +65,7 @@ impl BufferManager {
 
 	pub(self) fn new() -> Self {
 		log::info!(
-			"Instantiating buffer manager with pool size {}",
+			"Instantiating buffer manager: pool size {}",
 			BufferManager::POOL_SIZE
 		);
 		BufferManager {
@@ -90,16 +83,11 @@ impl BufferManager {
 	/// into that slot
 	///
 	/// The returned `Page` will unpin itself when dropped
-	pub fn pin(page_id: PageId, dm: &Arc<Mutex<DiskManager>>) -> Result<Page, Error> {
-		log::debug!(
-			"Pinning page {page_id} from db \"{}\"",
-			dm.lock()?.metadata.name,
-		);
-
+	pub fn pin(page_id: PageId, dm: &Arc<DiskManager>) -> Result<Page, Error> {
 		let mut bm = buf_mgr!()?;
 		bm.access_count += 1;
 		let access_count = bm.access_count;
-		let db_id = dm.lock()?.db_id;
+		let db_id = dm.db_id;
 		bm.dm_registry.insert(db_id, Arc::downgrade(dm));
 
 		if let Some(index) = bm.page_index.get(&(db_id, page_id)) {
@@ -107,11 +95,6 @@ impl BufferManager {
 
 			// page is already in pool
 			let slot = &mut bm.buf_pool[index];
-			log::trace!(
-				"Found page in buffer pool at index {index} with pin count {}",
-				slot.pin_count
-			);
-
 			slot.pin_count += 1;
 			slot.last_access = access_count;
 
@@ -125,12 +108,9 @@ impl BufferManager {
 		} else {
 			// need to read page from disk
 
-			let bytes = match dm.lock()?.read_page(page_id) {
-				Ok(p) => p,
-				Err(e) => {
-					return Err(Error::wrap(Internal, "Error while pinning page", e));
-				}
-			};
+			let bytes = dm
+				.read_page(page_id)
+				.map_err(|e| Error::wrap(Internal, "Error while pinning page", e))?;
 
 			if bm.buf_pool.len() < BufferManager::POOL_SIZE {
 				// pool isn't full yet
@@ -143,11 +123,6 @@ impl BufferManager {
 					last_access: access_count,
 					dirty_lock: Arc::new(Mutex::new(false)),
 				});
-				log::trace!(
-					"Expanding buffer pool, length {}/{}",
-					bm.buf_pool.len(),
-					BufferManager::POOL_SIZE
-				);
 
 				bm.page_index.insert((db_id, page_id), index);
 				let slot = &mut bm.buf_pool[index];
@@ -168,7 +143,6 @@ impl BufferManager {
 				drop(bm);
 
 				let mut i = 0;
-				log::trace!("looking for empty buf pool slot");
 				loop {
 					// choosing which slot to evict
 					let mut choice: Option<usize> = None;
@@ -182,12 +156,6 @@ impl BufferManager {
 					}
 					if let Some(index) = choice {
 						// found one, evict it
-
-						log::trace!(
-							"Evicting LRU page at index {index} (pin count: {}) ({} ms)",
-							bm.buf_pool[index].pin_count,
-							i * POLL_SLEEP_TIME
-						);
 
 						bm.flush(index)?;
 						let old_key = (bm.buf_pool[index].db_id, bm.buf_pool[index].page_id);
@@ -203,7 +171,6 @@ impl BufferManager {
 							dirty_lock: Arc::new(Mutex::new(false)),
 						};
 
-						log::trace!("Inserting page into buffer pool at index {index}");
 						bm.page_index.insert((db_id, page_id), index);
 						let slot = &mut bm.buf_pool[index];
 						slot.pin_count += 1;
@@ -232,14 +199,8 @@ impl BufferManager {
 	///
 	/// Should only be called by the `Page` destructor
 	pub fn unpin(index: usize) -> Result<(), Error> {
-		let mut bm = buf_mgr!()?;
-		let slot = &mut bm.buf_pool[index];
+		let slot = &mut buf_mgr!()?.buf_pool[index];
 		slot.pin_count = slot.pin_count.saturating_sub(1);
-		log::debug!(
-			"Unpinned page at index {} (pin count now {})",
-			index,
-			slot.pin_count
-		);
 		Ok(())
 	}
 
@@ -253,22 +214,31 @@ impl BufferManager {
 		if !*dirty {
 			return Ok(());
 		}
-		log::trace!("flushing page at index {index}");
 		let bytes = slot.page_bytes.read()?;
 		if let Some(dm_ref) = self.dm_registry.get(&slot.db_id) {
 			// disk manager is in registry
 			if let Some(dm) = dm_ref.upgrade() {
 				// disk manager hasn't been dropped yet
-				dm.lock()?.write_page(slot.page_id, &bytes)?;
+				dm.write_page(slot.page_id, &bytes)?;
 				*dirty = false;
 				return Ok(());
 			}
 		}
 		// TODO test this
 		// need to reopen disk manager
-		let mut dm = DiskManager::reopen(slot.db_id)?;
+		let dm = DiskManager::reopen(slot.db_id)?;
 		dm.write_page(slot.page_id, &bytes)?;
 		*dirty = false;
+		Ok(())
+	}
+
+	/// Flushes all pages in the global buffer manager
+	pub fn flush_all() -> Result<(), Error> {
+		log::debug!("Flushing all buffered pages");
+		let mut bm = buf_mgr!()?;
+		for i in 0..bm.buf_pool.len() {
+			bm.flush(i)?;
+		}
 		Ok(())
 	}
 }
@@ -276,7 +246,7 @@ impl BufferManager {
 impl Drop for BufferManager {
 	fn drop(&mut self) {
 		// flushing all pages on drop
-		log::info!("Flushing all pages");
+		log::info!("Buffer mananger dropping, flushing all pages");
 		for i in 0..self.buf_pool.len() {
 			let _ = self.flush(i);
 		}

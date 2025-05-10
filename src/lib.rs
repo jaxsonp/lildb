@@ -1,4 +1,4 @@
-#![allow(dead_code)] // <-- TODO delete
+#![allow(dead_code, unused_variables)] // <-- TODO delete
 
 mod db;
 
@@ -10,13 +10,12 @@ mod test_utils;
 use std::env;
 use std::path::{Path, PathBuf};
 
-use db::Database;
 use error::{Error, ErrorType::*};
 
 pub struct DbConn {}
 impl DbConn {}
 
-/// Convenience function that gets to root path from the env var, and asserts that it exists
+/// Convenience function that gets the database root path from the env var, and asserts that it exists
 fn get_root_path() -> Result<PathBuf, Error> {
 	let root_path_str = match env::var_os("LILDB_ROOT") {
 		Some(s) => s,

@@ -1,29 +1,32 @@
 mod buf_mgr;
 mod disk_mgr;
-mod file;
-mod record;
+mod obj;
+mod qep;
 mod schema;
+mod tuple;
 
 use std::hash::Hasher;
-use std::sync::{Arc, RwLock};
-
-use rustc_hash::FxHasher;
 
 use crate::*;
-use buf_mgr::BufferManager;
+pub(crate) use buf_mgr::BufferManager;
 use disk_mgr::{DiskManager, Page, PageId};
-use file::DbFile;
-use file::RecordId;
-use record::Record;
-use schema::Schema;
-
-pub type DatabaseId = u64;
+use obj::{DbFile, DbObject};
+use qep::QepNode;
+use schema::{ColType, Schema};
+use tuple::{Tuple, TupleAttr};
 
 /// Page size, in bytes
 const PAGE_SIZE: usize = 4096;
 
 /// Max length of a database name
 const MAX_DB_NAME_LEN: usize = 249;
+
+pub type DatabaseId = u64;
+
+pub struct TupleId {
+	page_id: PageId,
+	slot_no: u16,
+}
 
 /// Instance of a loaded database
 pub struct Database {
@@ -40,7 +43,7 @@ impl Database {
 
 	/// Gets a database ID from its name
 	fn get_id(name: &str) -> DatabaseId {
-		let mut h = FxHasher::default();
+		let mut h = rustc_hash::FxHasher::default();
 		h.write(name.as_bytes());
 		h.finish()
 	}
