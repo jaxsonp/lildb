@@ -1,3 +1,0 @@
-
-[env]
-LILDB_ROOT = { value = "./lildb/", relative = true } # /var/lib/lildb eventually
