@@ -11,7 +11,7 @@ impl Log for Logger {
 	}
 
 	fn log(&self, record: &Record) {
-		println!("{:<5} - {}", record.level(), record.args());
+		println!("{:<5}  {}", record.level(), record.args());
 	}
 
 	fn flush(&self) {}

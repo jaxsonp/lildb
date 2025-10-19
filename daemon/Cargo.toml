@@ -5,5 +5,14 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "lildb-daemon"
+path = "src/daemon.rs"
+
 [dependencies]
 log = { workspace = true }
+
+[build-dependencies]
+
+[dev-dependencies]
+tempfile = "3.23.0"
