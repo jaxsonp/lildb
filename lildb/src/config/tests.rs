@@ -46,8 +46,7 @@ fn invalid_key() {
 	write!(
 		config_file,
 		r#"
-LISTEN_PORT=1234
-FAKE=blahblah
+FAKE=1234
 "#
 	)
 	.unwrap();
@@ -63,8 +62,20 @@ fn invalid_values() {
 	write!(
 		config_file,
 		r#"
-LISTEN_PORT=1234
-FAKE=blahblah
+LISTEN_PORT=abcdefg
+"#
+	)
+	.unwrap();
+	assert!(matches!(
+		Config::from_file(&config_file.into_temp_path()),
+		Err(DaemonError::Config(_))
+	));
+
+	config_file = NamedTempFile::new().unwrap();
+	write!(
+		config_file,
+		r#"
+LISTEN_ADDRESS=256.256.256.256
 "#
 	)
 	.unwrap();

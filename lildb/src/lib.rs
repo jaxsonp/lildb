@@ -1,0 +1,80 @@
+mod config;
+mod db;
+mod error;
+mod logging;
+mod session;
+pub(crate) mod utils;
+
+use std::{fs, net::TcpListener, path::Path, thread};
+
+use config::Config;
+
+pub use config::config;
+pub use error::DaemonError;
+pub use log;
+
+/// Runs the daemon, optionally with a config file at `config_path`
+pub fn run_daemon(config_path: Option<String>) -> Result<(), DaemonError> {
+	logging::initialize();
+	log::info!("Logging initialized");
+
+	config::initialize_global_config(match config_path {
+		Some(s) => {
+			let path = Path::new(&s);
+			log::info!("Config file path: {}", path.display());
+			Config::from_file(path)?
+		}
+		None => {
+			log::info!("No config file specified, using defaults");
+			Config::default()
+		}
+	})?;
+	let config = config()?;
+
+	validate_dirs(&config)?;
+
+	let tcp_listener = TcpListener::bind((config.listen_addr, config.listen_port))?;
+	log::info!("Listening on {}", tcp_listener.local_addr()?);
+	loop {
+		let (stream, client_addr) = tcp_listener.accept()?;
+		thread::spawn(move || {
+			log::info!(
+				"Accepted connection from {client_addr} on {}",
+				stream
+					.local_addr()
+					.map(|a| a.to_string())
+					.unwrap_or_else(|e| {
+						log::error!("Error while getting peer address: {e}");
+						"ERROR".to_string()
+					})
+			);
+			let res = session::handle_session(stream);
+			match res {
+				Ok(_) => {
+					log::info!("Connection to {client_addr} closed");
+				}
+				Err(e) => {
+					log::error!("Connection to {client_addr} closed with error: {e}");
+				}
+			}
+		});
+	}
+}
+
+/// Creates or asserts the existence of the proper directory structure
+fn validate_dirs(config: &Config) -> Result<(), DaemonError> {
+	let dirs_to_validate = vec![config.data_path.clone(), config.db_path()];
+	for dir_path in dirs_to_validate.into_iter() {
+		if !dir_path.exists() {
+			log::warn!("Creating directory: {}", dir_path.display());
+			fs::create_dir(dir_path)?;
+		} else if !dir_path.is_dir() {
+			return Err(DaemonError::Config(format!(
+				"Expected directory at \"{}\", found file",
+				dir_path.display()
+			)));
+		}
+	}
+	log::debug!("Directory structure validated");
+	Ok(())
+}

@@ -7,9 +7,27 @@ use std::{
 	net::{IpAddr, Ipv4Addr},
 	path::{Path, PathBuf},
 	str::FromStr,
+	sync::{Arc, OnceLock},
 };
 
 use crate::*;
+
+static GLOBAL_CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
+
+pub fn initialize_global_config(c: Config) -> Result<(), DaemonError> {
+	GLOBAL_CONFIG.set(Arc::new(c)).map_err(|_c| {
+		DaemonError::Internal("Attempted to double initialize global config".to_string())
+	})
+}
+
+pub fn config() -> Result<Arc<Config>, DaemonError> {
+	GLOBAL_CONFIG
+		.get()
+		.ok_or(DaemonError::Internal(
+			"Attempted to access global config before initialization".to_string(),
+		))
+		.map(|config| config.clone())
+}
 
 /// Config for the daemon
 ///
@@ -99,6 +117,11 @@ impl Config {
 			)));
 		}
 		return Ok(config);
+	}
+
+	/// Directory for databases
+	pub fn db_path(&self) -> PathBuf {
+		self.data_path.join("databases")
 	}
 }
 

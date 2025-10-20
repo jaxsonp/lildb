@@ -1,6 +1,6 @@
 [workspace]
-members = ["daemon"]
-default-members = ["daemon"]
+members = ["lildb", "lildb-api"]
+default-members = ["lildb"]
 resolver = "3"
 
 [workspace.package]

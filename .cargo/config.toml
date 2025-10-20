@@ -1,7 +1,4 @@
 
-[env]
-LILDB_CONFIG_PATH = { value = "test.conf", relative = true }
-
 [profile.dev]
 
 [profile.release]

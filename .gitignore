@@ -1,2 +1,3 @@
 /target
-/lildb-data/*
+/lildb-data
+/test-data

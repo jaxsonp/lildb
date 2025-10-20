@@ -1,15 +1,17 @@
 [package]
-name = "lildb-daemon"
+name = "lildb"
+description = "LilDB daemon"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "lildb-daemon"
-path = "src/daemon.rs"
+name = "lildb"
+path = "src/main.rs"
 
 [dependencies]
+lildb-api = { path = "../lildb-api" }
 log = { workspace = true }
 
 [build-dependencies]
