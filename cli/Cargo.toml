@@ -1,0 +1,14 @@
+[package]
+name = "cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "lildb-cli"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5.50", features = ["derive"] }
+lildb-client = { path = "../client" }

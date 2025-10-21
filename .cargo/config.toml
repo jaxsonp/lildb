@@ -1,4 +1,8 @@
 
+[alias]
+run-server = "run --package server --bin lildb-server"
+run-cli = "run --package cli --bin lildb-cli"
+
 [profile.dev]
 
 [profile.release]

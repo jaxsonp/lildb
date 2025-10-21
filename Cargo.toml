@@ -1,6 +1,5 @@
 [workspace]
-members = ["lildb", "lildb-api"]
-default-members = ["lildb"]
+members = ["server", "api", "client", "cli"]
 resolver = "3"
 
 [workspace.package]

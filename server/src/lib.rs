@@ -14,7 +14,7 @@ pub use error::DaemonError;
 pub use log;
 
 /// Runs the daemon, optionally with a config file at `config_path`
-pub fn run_daemon(config_path: Option<String>) -> Result<(), DaemonError> {
+pub fn run(config_path: Option<String>) -> Result<(), DaemonError> {
 	logging::initialize();
 	log::info!("Logging initialized");
 

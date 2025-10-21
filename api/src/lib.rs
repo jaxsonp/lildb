@@ -1,12 +1,8 @@
 /// Request sent to the server
+///
+/// Will eventually populate with authentication and session management messages
 pub enum Request {
-	/// List all databases
-	ListDBs,
-	/// Set current session's active database
-	UseDB(String),
-	/// Evaluate a query on the current session's active database
 	Query(String),
-	/// End the session
 	Exit,
 }
 

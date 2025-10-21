@@ -8,7 +8,7 @@ fn main() {
 		.or(env::var("LILDB_CONFIG_PATH").ok());
 
 	// run daemon
-	let exit_code: i32 = match lildb::run_daemon(config_path) {
+	let exit_code: i32 = match server::run(config_path) {
 		Ok(_) => 0,
 		Err(e) => {
 			log::error!("{e}");
