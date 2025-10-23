@@ -4,7 +4,7 @@ mod tests;
 use std::{
 	collections::HashMap,
 	io::Read,
-	net::{IpAddr, Ipv4Addr},
+	net::{IpAddr, Ipv6Addr},
 	path::{Path, PathBuf},
 	str::FromStr,
 	sync::{Arc, OnceLock},
@@ -14,16 +14,16 @@ use crate::*;
 
 static GLOBAL_CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
 
-pub fn initialize_global_config(c: Config) -> Result<(), DaemonError> {
+pub fn initialize_global_config(c: Config) -> Result<(), ServerError> {
 	GLOBAL_CONFIG.set(Arc::new(c)).map_err(|_c| {
-		DaemonError::Internal("Attempted to double initialize global config".to_string())
+		ServerError::Internal("Attempted to double initialize global config".to_string())
 	})
 }
 
-pub fn config() -> Result<Arc<Config>, DaemonError> {
+pub fn config() -> Result<Arc<Config>, ServerError> {
 	GLOBAL_CONFIG
 		.get()
-		.ok_or(DaemonError::Internal(
+		.ok_or(ServerError::Internal(
 			"Attempted to access global config before initialization".to_string(),
 		))
 		.map(|config| config.clone())
@@ -45,14 +45,14 @@ pub struct Config {
 
 impl Config {
 	/// Read config from file
-	pub fn from_file(path: &Path) -> Result<Config, DaemonError> {
+	pub fn from_file(path: &Path) -> Result<Config, ServerError> {
 		if !path.exists() {
-			return Err(DaemonError::Config(format!(
+			return Err(ServerError::Config(format!(
 				"\"{}\" does not exist",
 				path.display()
 			)));
 		} else if !path.is_file() {
-			return Err(DaemonError::Config(format!(
+			return Err(ServerError::Config(format!(
 				"\"{}\" is not a file",
 				path.display()
 			)));
@@ -76,7 +76,7 @@ impl Config {
 			{
 				continue;
 			}
-			let (key, value) = line.split_once('=').ok_or(DaemonError::Config(format!(
+			let (key, value) = line.split_once('=').ok_or(ServerError::Config(format!(
 				"Line {line_num} malformed: \"{line}\""
 			)))?;
 			items.insert(key, value);
@@ -91,7 +91,7 @@ impl Config {
 
 		if let Some(address_str) = items.remove("LISTEN_ADDR") {
 			config.listen_addr = IpAddr::from_str(address_str).map_err(|_| {
-				DaemonError::Config(format!(
+				ServerError::Config(format!(
 					"Failed to parse listen address \"{}\" in config file",
 					address_str
 				))
@@ -101,7 +101,7 @@ impl Config {
 
 		if let Some(port_str) = items.remove("LISTEN_PORT") {
 			config.listen_port = port_str.parse::<u16>().map_err(|_| {
-				DaemonError::Config(format!(
+				ServerError::Config(format!(
 					"Failed to parse listen port \"{}\" in config file",
 					port_str
 				))
@@ -111,7 +111,7 @@ impl Config {
 
 		// leftover values
 		if let Some((key, _value)) = items.iter().next() {
-			return Err(DaemonError::Config(format!(
+			return Err(ServerError::Config(format!(
 				"Unrecognized option: \"{}\"",
 				key
 			)));
@@ -129,7 +129,7 @@ impl Default for Config {
 	fn default() -> Self {
 		Self {
 			data_path: Path::new("./lildb-data/").to_path_buf(),
-			listen_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+			listen_addr: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
 			listen_port: 11108,
 		}
 	}

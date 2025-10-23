@@ -3,18 +3,18 @@ mod db;
 mod error;
 mod logging;
 mod session;
-pub(crate) mod utils;
+pub mod util;
 
 use std::{fs, net::TcpListener, path::Path, thread};
 
 use config::Config;
 
 pub use config::config;
-pub use error::DaemonError;
+pub use error::ServerError;
 pub use log;
 
 /// Runs the daemon, optionally with a config file at `config_path`
-pub fn run(config_path: Option<String>) -> Result<(), DaemonError> {
+pub fn run(config_path: Option<String>) -> Result<(), ServerError> {
 	logging::initialize();
 	log::info!("Logging initialized");
 
@@ -62,14 +62,14 @@ pub fn run(config_path: Option<String>) -> Result<(), DaemonError> {
 }
 
 /// Creates or asserts the existence of the proper directory structure
-fn validate_dirs(config: &Config) -> Result<(), DaemonError> {
+fn validate_dirs(config: &Config) -> Result<(), ServerError> {
 	let dirs_to_validate = vec![config.data_path.clone(), config.db_path()];
 	for dir_path in dirs_to_validate.into_iter() {
 		if !dir_path.exists() {
 			log::warn!("Creating directory: {}", dir_path.display());
 			fs::create_dir(dir_path)?;
 		} else if !dir_path.is_dir() {
-			return Err(DaemonError::Config(format!(
+			return Err(ServerError::Config(format!(
 				"Expected directory at \"{}\", found file",
 				dir_path.display()
 			)));

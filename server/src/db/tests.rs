@@ -1,5 +1,5 @@
 use super::*;
-use utils::testing::*;
+use util::testing::*;
 
 #[test]
 fn create() -> TestResult {

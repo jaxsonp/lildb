@@ -3,7 +3,6 @@ members = ["server", "api", "client", "cli"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
 authors = ["Jaxson Pahukula <jaxpahu@gmail.com>"]
 edition = "2024"
 rust-version = "1.89"

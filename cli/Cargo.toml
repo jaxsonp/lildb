@@ -1,6 +1,6 @@
 [package]
-name = "cli"
-version.workspace = true
+name = "lildb-cli"
+version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,5 +10,7 @@ name = "lildb-cli"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.50", features = ["derive"] }
+clap = "4.5.50"
 lildb-client = { path = "../client" }
+log = { workspace = true }
+simple_logger = "5.1"

@@ -5,7 +5,7 @@ use std::{
 
 /// Various errors produced, some with additional messages or wrapped errors
 #[derive(Debug)]
-pub enum DaemonError {
+pub enum ServerError {
 	/// Internal errors, should never occur during proper operation
 	Internal(String),
 	/// Invalid configuration
@@ -16,9 +16,9 @@ pub enum DaemonError {
 	Database(String),
 }
 
-impl fmt::Display for DaemonError {
+impl fmt::Display for ServerError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		use DaemonError::*;
+		use ServerError::*;
 		match self {
 			Internal(msg) => write!(f, "Internal error: {msg}"),
 			Config(msg) => write!(f, "Invalid configuration: {msg}"),
@@ -28,8 +28,8 @@ impl fmt::Display for DaemonError {
 	}
 }
 
-impl From<io::Error> for DaemonError {
+impl From<io::Error> for ServerError {
 	fn from(e: io::Error) -> Self {
-		DaemonError::Io(e)
+		ServerError::Io(e)
 	}
 }

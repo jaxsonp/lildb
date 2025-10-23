@@ -1,7 +1,7 @@
 
 [alias]
-run-server = "run --package server --bin lildb-server"
-run-cli = "run --package cli --bin lildb-cli"
+run-server = "run --package lildb-server --bin lildb-server"
+run-cli = "run --package lildb-cli --bin lildb-cli"
 
 [profile.dev]
 

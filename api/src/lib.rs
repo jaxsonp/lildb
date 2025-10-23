@@ -1,20 +1,23 @@
-/// Request sent to the server
-///
-/// Will eventually populate with authentication and session management messages
-pub enum Request {
-	Query(String),
-	Exit,
+mod request;
+mod response;
+
+/// API semver version (major, minor, patch)
+pub type ApiVersion = (u32, u32, u32);
+
+/// LilDB API version
+pub const VERSION: ApiVersion = (0, 1, 0);
+
+use std::io;
+
+pub use request::{Request, RequestContent};
+pub use response::{QueryResult, Response};
+
+/// Trait to encapsulate message encoding implementation
+pub trait Encode {
+	fn encode(&self) -> Vec<u8>;
 }
 
-/// Response from the server
-pub enum ServerResponse {
-	/// Positive acknowledgment
-	Ok,
-	/// Response to a query
-	QueryResponse(QueryResult),
-	/// Error while serving request
-	Error(String),
+/// Trait to encapsulate message decoding
+pub trait Decode<R: io::Read>: Sized {
+	fn decode(stream: R) -> io::Result<Self>;
 }
-
-/// Data returned from a query
-pub struct QueryResult {}

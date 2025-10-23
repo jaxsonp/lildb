@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, net::Ipv4Addr};
 
 use tempfile::NamedTempFile;
 
@@ -52,7 +52,7 @@ FAKE=1234
 	.unwrap();
 	assert!(matches!(
 		Config::from_file(&config_file.into_temp_path()),
-		Err(DaemonError::Config(_))
+		Err(ServerError::Config(_))
 	));
 }
 
@@ -68,7 +68,7 @@ LISTEN_PORT=abcdefg
 	.unwrap();
 	assert!(matches!(
 		Config::from_file(&config_file.into_temp_path()),
-		Err(DaemonError::Config(_))
+		Err(ServerError::Config(_))
 	));
 
 	config_file = NamedTempFile::new().unwrap();
@@ -81,6 +81,6 @@ LISTEN_ADDRESS=256.256.256.256
 	.unwrap();
 	assert!(matches!(
 		Config::from_file(&config_file.into_temp_path()),
-		Err(DaemonError::Config(_))
+		Err(ServerError::Config(_))
 	));
 }

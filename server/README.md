@@ -19,5 +19,5 @@ Below are all the configurable options:
 | Name | Description | Default |
 |---|---|---|
 | `DATA_PATH` | Path to directory where lildb data is stored | `./lildb-data` |
-| `LISTEN_ADDR` | Address to receive connect requests on | `localhost` |
+| `LISTEN_ADDR` | Address to receive connect requests on | `*` |
 | `LISTEN_PORT` | Port to receive connect requests on | `11108` |

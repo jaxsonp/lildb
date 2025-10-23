@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Once};
 
 use crate::*;
 
-pub type TestResult = Result<(), DaemonError>;
+pub type TestResult = Result<(), ServerError>;
 
 /// Used to make sure that testing is initialized once
 static INIT_TESTS: Once = Once::new();
