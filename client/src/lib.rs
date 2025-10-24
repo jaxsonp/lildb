@@ -1,29 +1,79 @@
 use std::{
 	io::{self, Write},
-	net::{SocketAddr, TcpStream, ToSocketAddrs},
+	net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs},
 };
 
-use lildb_api::{Encode, Request, RequestContent};
+use lildb_api::{Decodable, Encodable, Request, Response};
 
 /// Represents an active connection to a LilDB server
+///
+/// Gracefully closes the session on drop
 pub struct LildbSession {
-	host: SocketAddr,
+	_host: SocketAddr,
 	stream: TcpStream,
 }
+impl LildbSession {
+	/// Creates and establishes a new session with the server at `addr`
+	pub fn new<A: ToSocketAddrs>(addr: A) -> io::Result<LildbSession> {
+		let host = addr.to_socket_addrs()?.next();
+		if host.is_none() {
+			return Err(io::Error::other("Unable to resolve host address"));
+		}
+		let host = host.unwrap();
+		log::debug!("Resolved host address: {}", host);
+		let stream = TcpStream::connect(host)?;
+		log::debug!("Connection established from local {}", stream.local_addr()?);
 
-pub fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<LildbSession> {
-	let host = addr.to_socket_addrs()?.next();
-	if host.is_none() {
-		return Err(io::Error::other("Unable to resolve host address"));
+		let mut session = LildbSession {
+			_host: host,
+			stream,
+		};
+
+		// establish session
+		let resp = session.send_and_recv(Request::init_session())?;
+		match resp {
+			Response::Ok => {}
+			Response::Error(msg) => {
+				return Err(io::Error::other(format!("Server denied connection: {msg}")));
+			}
+			_ => {
+				return Err(io::Error::other("Unexpected server response"));
+			}
+		}
+		log::debug!("Session established");
+		Ok(session)
 	}
-	let host = host.unwrap();
-	log::debug!("Resolved host address: {}", host);
-	let mut stream = TcpStream::connect(host)?;
-	log::debug!("Connection established from {}", stream.local_addr()?);
 
-	stream.write(Request::connect().encode().as_slice())?;
+	/// Send a request to the server
+	///
+	/// Returns the number of bytes sent
+	pub fn send(&mut self, req: Request) -> io::Result<usize> {
+		log::trace!("Sending {req:?}");
+		self.stream.write(&req.encode())
+	}
 
-	std::thread::sleep(std::time::Duration::from_secs_f32(5.0));
+	/// Receives and returns a response from the server
+	pub fn recv(&mut self) -> io::Result<Response> {
+		let resp = Response::decode(&mut self.stream)?;
+		log::trace!("Received {resp:?}");
+		Ok(resp)
+	}
 
-	Ok(LildbSession { host, stream })
+	/// Sends a request to the server, then receives and returns the server's response
+	pub fn send_and_recv(&mut self, req: Request) -> io::Result<Response> {
+		self.send(req)?;
+		self.recv()
+	}
+}
+
+impl Drop for LildbSession {
+	fn drop(&mut self) {
+		log::info!("Closing session");
+
+		// TODO implement close message to server
+
+		self.stream
+			.shutdown(Shutdown::Both)
+			.expect("Error while closing tcp stream");
+	}
 }

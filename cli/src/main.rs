@@ -1,10 +1,10 @@
-use std::net::TcpStream;
-
 use clap::{Arg, Command, value_parser};
+use lildb_client::LildbSession;
 
 fn main() {
 	// TODO remove or improve
-	simple_logger::init_with_level(log::Level::Debug).unwrap();
+	simple_logger::init_with_level(log::Level::Trace).unwrap();
+
 	// CLI args
 	let args = Command::new("lildb-cli")
 		.version(env!("CARGO_PKG_VERSION"))
@@ -33,18 +33,16 @@ fn main() {
 	let host_port = *args.get_one::<u16>("port").expect("arg with default");
 	eprintln!("Connecting to server at {host_address}:{host_port}");
 
-	let connection = lildb_client::connect((host_address, host_port)).unwrap_or_else(|e| {
+	let connection = LildbSession::new((host_address, host_port)).unwrap_or_else(|e| {
 		eprintln!("Failed to connect to server: {e}");
 		std::process::exit(1)
 	});
 
-	std::thread::sleep(std::time::Duration::from_secs_f32(3.0));
+	println!("connected");
+
+	std::thread::sleep(std::time::Duration::from_secs_f32(4.0));
+
+	drop(connection);
 
 	std::process::exit(0);
-}
-
-fn read_til_null(stream: &mut TcpStream) -> u32 {
-	let bytes_read: u32 = 0;
-
-	return bytes_read;
 }

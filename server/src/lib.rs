@@ -5,9 +5,10 @@ mod logging;
 mod session;
 pub mod util;
 
-use std::{fs, net::TcpListener, path::Path, thread};
+use std::{fs, io, net::TcpListener, path::Path, thread};
 
 use config::Config;
+use session::Session;
 
 pub use config::config;
 pub use error::ServerError;
@@ -38,17 +39,8 @@ pub fn run(config_path: Option<String>) -> Result<(), ServerError> {
 	loop {
 		let (stream, client_addr) = tcp_listener.accept()?;
 		thread::spawn(move || {
-			log::info!(
-				"Accepted connection from {client_addr} on {}",
-				stream
-					.local_addr()
-					.map(|a| a.to_string())
-					.unwrap_or_else(|e| {
-						log::error!("Error while getting peer address: {e}");
-						"ERROR".to_string()
-					})
-			);
-			let res = session::handle_session(stream);
+			log::info!("Accepted connection from {client_addr}");
+			let res = Session::new(stream).handle();
 			match res {
 				Ok(_) => {
 					log::info!("Connection to {client_addr} closed");

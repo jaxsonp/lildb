@@ -1,32 +1,34 @@
 mod content;
+#[cfg(test)]
+mod tests;
 
-use std::io;
+use std::io::{self, Read};
 
 pub use content::RequestContent;
 
 use crate::*;
 
 /// A request sent to the server
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Request {
-	content: RequestContent,
+	pub content: RequestContent,
 }
 impl Request {
-	pub fn connect() -> Self {
+	pub fn init_session() -> Self {
 		Request {
-			content: RequestContent::Connect { api: VERSION },
+			content: RequestContent::InitSession { api: VERSION },
 		}
 	}
 }
-impl Encode for Request {
+
+impl Encodable for Request {
 	fn encode(&self) -> Vec<u8> {
 		return self.content.encode();
 	}
 }
-
-impl<R: io::Read> Decode<R> for Request {
-	fn decode(stream: R) -> io::Result<Request> {
-		let content = RequestContent::decode(stream)?;
+impl<R: Read> Decodable<R> for Request {
+	fn decode(bytes: &mut R) -> io::Result<Request> {
+		let content = RequestContent::decode(bytes)?;
 		return Ok(Request { content });
 	}
 }
