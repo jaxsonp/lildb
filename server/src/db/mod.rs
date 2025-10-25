@@ -1,15 +1,16 @@
 #[cfg(test)]
 mod tests;
 
+use std::fs;
+
 use crate::*;
 
-/// Represents an opened database able to be connected to
-pub struct DatabaseManager {
-	pub name: String,
+/// An open and connected database
+pub struct Database {
+	name: String,
 }
-
-impl DatabaseManager {
-	pub fn create(name: String) -> Result<DatabaseManager, ServerError> {
+impl Database {
+	pub fn create(name: String) -> Result<Database, ServerError> {
 		if name.len() == 0 {
 			return Err(ServerError::Database("Name must not be empty".to_string()));
 		}
@@ -35,6 +36,6 @@ impl DatabaseManager {
 		// creating directory
 		fs::create_dir(path)?;
 
-		Ok(DatabaseManager { name })
+		Ok(Database { name })
 	}
 }

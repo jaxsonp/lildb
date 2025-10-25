@@ -1,7 +1,12 @@
+use std::{
+	io::{self, BufRead},
+	process::ExitCode,
+};
+
 use clap::{Arg, Command, value_parser};
 use lildb_client::LildbSession;
 
-fn main() {
+fn main() -> ExitCode {
 	// TODO remove or improve
 	simple_logger::init_with_level(log::Level::Trace).unwrap();
 
@@ -33,16 +38,38 @@ fn main() {
 	let host_port = *args.get_one::<u16>("port").expect("arg with default");
 	eprintln!("Connecting to server at {host_address}:{host_port}");
 
-	let connection = LildbSession::new((host_address, host_port)).unwrap_or_else(|e| {
-		eprintln!("Failed to connect to server: {e}");
-		std::process::exit(1)
-	});
+	let session = match LildbSession::new((host_address, host_port)) {
+		Ok(s) => s,
+		Err(e) => {
+			eprintln!("Error while establishing session\n{e}");
+			return ExitCode::FAILURE;
+		}
+	};
 
 	println!("connected");
 
-	std::thread::sleep(std::time::Duration::from_secs_f32(4.0));
+	let stdin = io::stdin();
 
-	drop(connection);
-
-	std::process::exit(0);
+	loop {
+		// getting input
+		let query = {
+			let mut stdin_handle = stdin.lock();
+			let mut buf = String::new();
+			match stdin_handle.read_line(&mut buf) {
+				Ok(bytes_read) => {
+					if bytes_read == 0 {
+						// read EOF, end session
+						drop(session);
+						return ExitCode::SUCCESS;
+					}
+				}
+				Err(e) => {
+					eprintln!("{e}");
+					return ExitCode::FAILURE;
+				}
+			};
+			buf
+		};
+		eprintln!("input: {query}");
+	}
 }

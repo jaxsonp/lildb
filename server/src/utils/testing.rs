@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Once};
+use std::{fs, path::PathBuf, sync::Once};
 
 use crate::*;
 
@@ -20,7 +20,7 @@ pub fn setup_test() {
 			fs::remove_dir_all(&config.data_path).unwrap();
 		}
 
-		crate::validate_dirs(&config).expect("Error validating directory structure");
+		utils::validate_dirs(&config).expect("Error validating directory structure");
 
 		config::initialize_global_config(config).expect("double initialized global config");
 	});

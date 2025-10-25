@@ -3,6 +3,7 @@ mod tests;
 
 use std::{
 	collections::HashMap,
+	fs,
 	io::Read,
 	net::{IpAddr, Ipv6Addr},
 	path::{Path, PathBuf},

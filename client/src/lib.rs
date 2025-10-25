@@ -3,7 +3,7 @@ use std::{
 	net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs},
 };
 
-use lildb_api::{Decodable, Encodable, Request, Response};
+use lildb_api::{Decodable, Encodable, Request, RequestContent, Response};
 
 /// Represents an active connection to a LilDB server
 ///
@@ -30,7 +30,11 @@ impl LildbSession {
 		};
 
 		// establish session
-		let resp = session.send_and_recv(Request::init_session())?;
+		let resp = session.send_and_recv(Request {
+			content: RequestContent::InitSession {
+				api: lildb_api::VERSION,
+			},
+		})?;
 		match resp {
 			Response::Ok => {}
 			Response::Error(msg) => {
@@ -47,20 +51,20 @@ impl LildbSession {
 	/// Send a request to the server
 	///
 	/// Returns the number of bytes sent
-	pub fn send(&mut self, req: Request) -> io::Result<usize> {
+	fn send(&mut self, req: Request) -> io::Result<usize> {
 		log::trace!("Sending {req:?}");
 		self.stream.write(&req.encode())
 	}
 
 	/// Receives and returns a response from the server
-	pub fn recv(&mut self) -> io::Result<Response> {
+	fn recv(&mut self) -> io::Result<Response> {
 		let resp = Response::decode(&mut self.stream)?;
 		log::trace!("Received {resp:?}");
 		Ok(resp)
 	}
 
 	/// Sends a request to the server, then receives and returns the server's response
-	pub fn send_and_recv(&mut self, req: Request) -> io::Result<Response> {
+	fn send_and_recv(&mut self, req: Request) -> io::Result<Response> {
 		self.send(req)?;
 		self.recv()
 	}
@@ -68,12 +72,11 @@ impl LildbSession {
 
 impl Drop for LildbSession {
 	fn drop(&mut self) {
-		log::info!("Closing session");
+		let _ = self.send(Request {
+			content: RequestContent::Exit,
+		});
 
-		// TODO implement close message to server
-
-		self.stream
-			.shutdown(Shutdown::Both)
-			.expect("Error while closing tcp stream");
+		let _ = self.stream.shutdown(Shutdown::Write);
+		log::info!("LilDB session closed");
 	}
 }
