@@ -13,13 +13,6 @@ use crate::*;
 pub struct Request {
 	pub content: RequestContent,
 }
-impl Request {
-	pub fn init_session() -> Self {
-		Request {
-			content: RequestContent::InitSession { api: VERSION },
-		}
-	}
-}
 
 impl Encodable for Request {
 	fn encode(&self) -> Vec<u8> {

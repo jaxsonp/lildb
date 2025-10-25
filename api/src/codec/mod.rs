@@ -37,13 +37,25 @@ impl<R: Read> Decodable<R> for String {
 	}
 }
 
-impl Encodable for u32 {
-	fn encode(&self) -> Vec<u8> {
-		return Vec::from(self.to_le_bytes());
-	}
+/// A macro that implements `Encodable` and `Decodable` for any type that implements [to|from]_le_bytes()
+macro_rules! le_bytes_types {
+	($($ty:ty )*) => {
+		$(
+			impl Encodable for $ty {
+				fn encode(&self) -> Vec<u8> {
+					return Vec::from(self.to_le_bytes());
+				}
+			}
+			impl<R: Read> Decodable<R> for $ty {
+				fn decode(bytes: &mut R) -> io::Result<Self> {
+					Ok(<$ty>::from_le_bytes(read_to_array(bytes)?))
+				}
+			}
+		)*
+	};
 }
-impl<R: Read> Decodable<R> for u32 {
-	fn decode(bytes: &mut R) -> io::Result<Self> {
-		Ok(u32::from_le_bytes(read_to_array(bytes)?))
-	}
-}
+le_bytes_types!(
+	u8 u16 u32 u64 u128	usize
+	i8 i16 i32 i64 i128	isize
+	f32 f64
+);
