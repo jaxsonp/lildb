@@ -187,6 +187,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lildb-ql"
+version = "0.1.0"
+dependencies = [
+ "lildb-api",
+]
+
+[[package]]
 name = "lildb-server"
 version = "0.1.0"
 dependencies = [
