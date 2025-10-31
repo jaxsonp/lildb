@@ -9,7 +9,7 @@ pub use content::RequestContent;
 use crate::*;
 
 /// A request sent to the server
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Request {
 	pub content: RequestContent,
 }

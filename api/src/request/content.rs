@@ -1,19 +1,18 @@
-use crate::{ApiVersion, Decodable, Encodable};
+use crate::{ApiVersion, Decodable, Encodable, query::Query};
 
 use std::io::{self, Read};
 
 /// Content of messages sent to the server
 ///
 /// Will eventually populate with authentication and session management messages
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum RequestContent {
 	/// First message send, to agree upon API version
-	InitSession {
-		api: ApiVersion,
-	},
+	InitSession { api: ApiVersion },
 	/// Sent before closing the connection, for graceful exiting
 	Exit,
-	Query(String),
+	/// Send query
+	Query(Query),
 }
 
 impl Encodable for RequestContent {
@@ -33,9 +32,7 @@ impl Encodable for RequestContent {
 				out.extend(api.1.encode());
 				out.extend(api.2.encode());
 			}
-			RequestContent::Exit => {
-				// no data
-			}
+			RequestContent::Exit => {}
 			RequestContent::Query(query_str) => {
 				out.extend_from_slice(&query_str.encode());
 			}
@@ -46,10 +43,9 @@ impl Encodable for RequestContent {
 
 impl<R: Read> Decodable<R> for RequestContent {
 	fn decode(mut b: &mut R) -> io::Result<RequestContent> {
-		let mut discriminant = [0u8; 1];
-		b.read_exact(&mut discriminant)?;
+		let discriminant = u8::decode(b)?;
 
-		match discriminant[0] {
+		match discriminant {
 			0 => {
 				// connect
 				let maj = u32::decode(&mut b)?;
@@ -65,7 +61,7 @@ impl<R: Read> Decodable<R> for RequestContent {
 			}
 			2 => {
 				// query
-				let query_str = String::decode(&mut b)?;
+				let query_str = Query::decode(&mut b)?;
 				Ok(RequestContent::Query(query_str))
 			}
 			_ => {

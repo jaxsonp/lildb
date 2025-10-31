@@ -1,4 +1,4 @@
-use std::{fs, io, net::TcpListener, path::Path, thread};
+use std::{net::TcpListener, path::Path, thread};
 
 use crate::*;
 
@@ -22,21 +22,16 @@ pub fn run(config_path: Option<String>) -> Result<(), ServerError> {
 
 	utils::validate_dirs(&config)?;
 
+	// instantiate db manager
+
+	// start listening for connections
 	let tcp_listener = TcpListener::bind((config.listen_addr, config.listen_port))?;
 	log::info!("Listening on {}", tcp_listener.local_addr()?);
 	loop {
 		let (stream, client_addr) = tcp_listener.accept()?;
 		thread::spawn(move || {
 			log::info!("Accepted connection from {client_addr}");
-			let res = Session::new(stream).handle();
-			match res {
-				Ok(_) => {
-					log::info!("Connection to {client_addr} closed");
-				}
-				Err(e) => {
-					log::error!("Connection to {client_addr} closed with error: {e}");
-				}
-			}
+			Session::new(stream).serve();
 		});
 	}
 }

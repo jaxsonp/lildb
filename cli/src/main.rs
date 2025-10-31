@@ -38,7 +38,7 @@ fn main() -> ExitCode {
 	let host_port = *args.get_one::<u16>("port").expect("arg with default");
 	eprintln!("Connecting to server at {host_address}:{host_port}");
 
-	let session = match LildbSession::new((host_address, host_port)) {
+	let mut session = match LildbSession::new((host_address, host_port)) {
 		Ok(s) => s,
 		Err(e) => {
 			eprintln!("Error while establishing session\n{e}");
@@ -46,13 +46,13 @@ fn main() -> ExitCode {
 		}
 	};
 
-	println!("connected");
+	eprintln!("Connected");
 
 	let stdin = io::stdin();
 
 	loop {
 		// getting input
-		let query = {
+		let input = {
 			let mut stdin_handle = stdin.lock();
 			let mut buf = String::new();
 			match stdin_handle.read_line(&mut buf) {
@@ -67,9 +67,26 @@ fn main() -> ExitCode {
 					eprintln!("{e}");
 					return ExitCode::FAILURE;
 				}
-			};
+			}
 			buf
 		};
-		eprintln!("input: {query}");
+
+		// parsing input into query
+		let query = match lildb_ql::parse(input) {
+			Ok(q) => q,
+			Err(msg) => {
+				eprintln!("Error: {}", msg);
+				continue;
+			}
+		};
+
+		let resp = match session.query(query) {
+			Ok(resp) => resp,
+			Err(e) => {
+				eprintln!("{e}");
+				return ExitCode::FAILURE;
+			}
+		};
+		println!("resp: {:?}", resp);
 	}
 }

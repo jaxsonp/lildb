@@ -21,19 +21,64 @@ impl Encodable for String {
 	fn encode(&self) -> Vec<u8> {
 		let mut out = Vec::with_capacity(self.len() + size_of::<u32>());
 		let bytes = self.as_bytes();
-		out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+		out.extend_from_slice(&(bytes.len() as u32).encode());
 		out.extend_from_slice(bytes);
 		return out;
 	}
 }
 impl<R: Read> Decodable<R> for String {
-	fn decode(mut bytes: &mut R) -> io::Result<Self> {
-		let len = u32::from_le_bytes(read_to_array(&mut bytes)?) as usize;
+	fn decode(bytes: &mut R) -> io::Result<Self> {
+		let len = u32::decode(bytes)? as usize;
 		let mut buf = vec![0u8; len];
 		if len > 0 {
 			bytes.read_exact(buf.as_mut_slice())?;
 		}
 		String::from_utf8(buf).map_err(|e| io::Error::other(e.to_string()))
+	}
+}
+
+impl<T: Encodable> Encodable for Vec<T> {
+	fn encode(&self) -> Vec<u8> {
+		let mut out = Vec::new();
+		out.extend_from_slice(&(self.len() as u32).encode());
+		for item in self.iter() {
+			out.extend_from_slice(&item.encode());
+		}
+		out
+	}
+}
+impl<R: Read, T: Decodable<R>> Decodable<R> for Vec<T> {
+	fn decode(bytes: &mut R) -> io::Result<Self> {
+		let len = u32::decode(bytes)? as usize;
+		let mut vec: Vec<T> = Vec::with_capacity(len);
+		for _ in 0..len {
+			vec.push(T::decode(bytes)?);
+		}
+		Ok(vec)
+	}
+}
+
+impl<T: Encodable> Encodable for Option<T> {
+	fn encode(&self) -> Vec<u8> {
+		match self {
+			Some(item) => {
+				let mut out = Vec::new();
+				out.push(1);
+				out.extend_from_slice(&item.encode());
+				out
+			}
+			None => vec![0u8],
+		}
+	}
+}
+impl<R: Read, T: Decodable<R>> Decodable<R> for Option<T> {
+	fn decode(bytes: &mut R) -> io::Result<Self> {
+		let discriminant = u8::decode(bytes)?;
+		match discriminant {
+			0 => Ok(Self::None),
+			1 => Ok(Self::Some(T::decode(bytes)?)),
+			_ => Err(io::Error::other("Malformed request content")),
+		}
 	}
 }
 
@@ -55,7 +100,7 @@ macro_rules! le_bytes_types {
 	};
 }
 le_bytes_types!(
-	u8 u16 u32 u64 u128	usize
-	i8 i16 i32 i64 i128	isize
+	u8 u16 u32 u64 u128
+	i8 i16 i32 i64 i128
 	f32 f64
 );

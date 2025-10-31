@@ -1,55 +1,28 @@
+mod content;
 mod query_res;
 #[cfg(test)]
 mod tests;
 
 use std::io::{self, Read};
 
+use crate::{Decodable, Encodable};
+pub use content::ResponseContent;
 pub use query_res::QueryResult;
 
-use crate::{Decodable, Encodable};
-
 /// Response from the server
-#[derive(Debug)]
-pub enum Response {
-	/// Positive acknowledgment
-	Ok,
-	/// Error while serving request
-	Error(String),
-	// /// Response to a query
-	//QueryResponse(QueryResult),
+#[derive(Debug, PartialEq, Eq)]
+pub struct Response {
+	pub content: ResponseContent,
 }
 
 impl Encodable for Response {
 	fn encode(&self) -> Vec<u8> {
-		let mut out: Vec<u8> = Vec::new();
-		// content type
-		let discriminant: u32 = match self {
-			Response::Ok => 0,
-			Response::Error(_) => 1,
-		};
-		out.extend(discriminant.encode());
-		match self {
-			Response::Ok => {}
-			Response::Error(err_str) => {
-				out.extend(err_str.encode());
-			}
-		}
-		return out;
+		return self.content.encode();
 	}
 }
-
 impl<R: Read> Decodable<R> for Response {
 	fn decode(bytes: &mut R) -> io::Result<Response> {
-		let discriminant = u32::decode(bytes)?;
-		Ok(match discriminant {
-			0 => Response::Ok,
-			1 => {
-				let err_str = String::decode(bytes)?;
-				Response::Error(err_str)
-			}
-			_ => {
-				return Err(io::Error::other("Malformed response discriminant"));
-			}
-		})
+		let content = ResponseContent::decode(bytes)?;
+		return Ok(Response { content });
 	}
 }

@@ -83,15 +83,12 @@ impl<'input> Tokens<'input> {
 				Ok(())
 			} else {
 				Err(format!(
-					"Expected {}, found {} (line {}, col {})",
+					"Expected \"{}\", found {} (line {}, col {})",
 					ty, tok.ty, tok.loc.line, tok.loc.start_col
 				))
 			}
 		} else {
-			Err(format!(
-				"Expected {}, found EOF (line {}, col {})",
-				ty, self.line, self.col,
-			))
+			Err(format!("Expected \"{}\", found EOF", ty))
 		}
 	}
 }

@@ -3,7 +3,7 @@ use std::{
 	net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs},
 };
 
-use lildb_api::{Decodable, Encodable, Request, RequestContent, Response};
+use lildb_api::{Decodable, Encodable, Request, RequestContent, Response, ResponseContent};
 
 /// Represents an active connection to a LilDB server
 ///
@@ -35,17 +35,23 @@ impl LildbSession {
 				api: lildb_api::VERSION,
 			},
 		})?;
-		match resp {
-			Response::Ok => {}
-			Response::Error(msg) => {
+		match resp.content {
+			ResponseContent::Ok => {}
+			ResponseContent::Error(msg) => {
 				return Err(io::Error::other(format!("Server denied connection: {msg}")));
-			}
-			_ => {
-				return Err(io::Error::other("Unexpected server response"));
-			}
+			} /*_ => {
+				  return Err(io::Error::other("Unexpected server response"));
+			  }*/
 		}
-		log::debug!("Session established");
+		log::info!("Session established to {host}");
 		Ok(session)
+	}
+
+	/// Send a query to the server and get a response.
+	pub fn query(&mut self, q: lildb_api::query::Query) -> io::Result<Response> {
+		self.send_and_recv(Request {
+			content: RequestContent::Query(q),
+		})
 	}
 
 	/// Send a request to the server
@@ -77,6 +83,6 @@ impl Drop for LildbSession {
 		});
 
 		let _ = self.stream.shutdown(Shutdown::Write);
-		log::info!("LilDB session closed");
+		log::info!("Session closed");
 	}
 }

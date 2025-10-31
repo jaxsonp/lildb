@@ -1,12 +1,19 @@
 use std::{
 	collections::HashMap,
-	sync::{Arc, Weak},
+	sync::{LazyLock, Mutex, Weak},
 };
 
 use crate::*;
 use db::Database;
 
-/// Represents an opened database able to be connected to
+/// Global database manager
+pub const DB_MANAGER: LazyLock<Mutex<DatabaseManager>> = LazyLock::new(|| {
+	Mutex::new(DatabaseManager {
+		connected_dbs: HashMap::new(),
+	})
+});
+
+/// Manages open databases
 pub struct DatabaseManager {
 	/// Map of open databases, by name
 	connected_dbs: HashMap<String, Weak<Database>>,

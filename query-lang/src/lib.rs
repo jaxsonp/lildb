@@ -1,24 +1,21 @@
 mod lexer;
 mod parser;
-mod tree;
 
 use lexer::Tokens;
 
-use crate::parser::try_parse_query;
+use parser::{tree::ParseTreeNode, try_parse_query};
 
-pub fn parse(input: String) -> Option<()> {
+/// Parse an input string
+pub fn parse(input: String) -> Result<lildb_api::query::Query, String> {
 	let mut tokens = Tokens::new(input.chars());
-	let parsed = try_parse_query(&mut tokens);
-	println!("parsed: {:?}", parsed);
-	None
-}
-
-#[derive(Debug)]
-enum FunctionType {
-	Table,
-	Read,
+	let Some(parsed) = try_parse_query(&mut tokens)? else {
+		return Err("Input did not contain a query".to_string());
+	};
+	let q = parsed.validate();
+	q
 }
 
 fn main() {
-	parse("db.table(abc, xyz).table(123);".to_string());
+	let res = parse("db.table(abc, xyz).read()".to_string());
+	println!("result: {:?}", res);
 }

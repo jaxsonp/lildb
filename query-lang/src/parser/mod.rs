@@ -1,20 +1,19 @@
-use std::iter::Peekable;
+//!
+//! This module contains code implementing a recursive descent parser for LQL. Each `try_parse_*` function will return
+//! `Ok(None)` if it decides that the token stream does not contain what is being parsed for (no tokens will be
+//! consumed). The functions will return `Err(...)` if it decides that the token stream _does_ contain what is being
+//! parsed for, but parsing was unsuccessful after tokens were consumed. `Ok(Some(...))` will be returned parsing was
+//! successful.
+//!
+//! See the readme for grammar definition.
+//!
+pub mod tree;
 
-use crate::{
-	FunctionType,
-	lexer::{Token, TokenType, Tokens},
-	tree::*,
-};
+use lildb_api::query::FunctionType;
 
-//
-// This is a recursive descent parser, hinging on the grammar being LL(1). Each `try_parse_*` function will return
-// `Ok(None)` if it decides that the token stream does not contain what is being parsed for (no tokens will be
-// consumed). The functions will return `Err(...)` if it decides that the token stream _does_ contain what is being
-// parsed for, but parsing was unsuccessful after tokens were consumed. `Ok(Some(...))` will be returned parsing was
-// successful.
-//
-// See readme for grammar definition.
-//
+use crate::lexer::{Token, TokenType, Tokens};
+
+use tree::*;
 
 /// Describes the output of a parsing function in a recursive descent parser
 ///
@@ -31,11 +30,16 @@ pub fn try_parse_query(tokens: &mut Tokens) -> ParseOutcome<ParseTreeQuery> {
 	{
 		tokens.next();
 
-		let f = try_parse_function(tokens)?;
+		let Some(f) = try_parse_function(tokens)? else {
+			return Err(format!(
+				"Expected function (line {}, col {})",
+				tokens.last_loc.line, tokens.last_loc.start_col
+			));
+		};
 
 		tokens.expect(TokenType::Semicolon)?;
 
-		return Ok(Some(ParseTreeQuery { f }));
+		return Ok(Some(ParseTreeQuery::DB(f)));
 	}
 	Ok(None)
 }
@@ -71,11 +75,11 @@ fn try_parse_function(tokens: &mut Tokens) -> ParseOutcome<ParseTreeFunction> {
 		Ok(Some(ParseTreeFunction::Function {
 			ty,
 			args: Box::new(args),
-			chained_function: Box::new(chained_function),
+			chained: Box::new(chained_function),
 		}))
 	} else {
 		// empty
-		Ok(Some(ParseTreeFunction::None))
+		Ok(Some(ParseTreeFunction::NoFunction))
 	}
 }
 
@@ -113,7 +117,7 @@ fn try_parse_function_args(tokens: &mut Tokens) -> ParseOutcome<ParseTreeFunctio
 		};
 
 		return Ok(Some(ParseTreeFunctionArgs::Args {
-			value: Box::new(value),
+			value,
 			more: Box::new(more_args),
 		}));
 	} else {
@@ -143,7 +147,7 @@ fn try_parse_more_function_args(tokens: &mut Tokens) -> ParseOutcome<ParseTreeMo
 		};
 
 		return Ok(Some(ParseTreeMoreFunctionArgs::MoreArgs {
-			value: Box::new(value),
+			value,
 			more: Box::new(more_args),
 		}));
 	} else {

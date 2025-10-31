@@ -12,5 +12,6 @@ path = "src/main.rs"
 [dependencies]
 clap = "4.5.50"
 lildb-client = { path = "../client" }
+lildb-ql = { path = "../query-lang" } 
 log = { workspace = true }
 simple_logger = "5.1"

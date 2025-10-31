@@ -1,4 +1,5 @@
 mod codec;
+pub mod query;
 mod request;
 mod response;
 pub(crate) mod utils;
@@ -20,4 +21,4 @@ use std::fmt;
 
 pub use codec::{Decodable, Encodable};
 pub use request::{Request, RequestContent};
-pub use response::{QueryResult, Response};
+pub use response::{QueryResult, Response, ResponseContent};
