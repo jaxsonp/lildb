@@ -1,11 +1,22 @@
 [workspace]
-members = ["server", "api", "client", "cli", "query-lang"]
+members = [".", "subcrates/*"]
 resolver = "3"
+default-members = ["."]
 
 [workspace.package]
+version = "0.1.0"
 authors = ["Jaxson Pahukula <jaxpahu@gmail.com>"]
 edition = "2024"
 rust-version = "1.89"
 
 [workspace.dependencies]
-log = "0.4.28"
+lildb = { path = "." }
+
+[package]
+name = "lildb"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]

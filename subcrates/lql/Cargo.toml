@@ -1,0 +1,10 @@
+[package]
+name = "lql"
+description = "LilDB Query Language parsing library"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lildb.workspace = true
