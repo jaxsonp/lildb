@@ -1,33 +1,45 @@
-#[derive(Debug)]
-pub enum Query {
-	/// Query on db
-	DB(Function),
+pub mod functions;
+mod types;
+
+use functions::FunctionDef;
+
+pub use types::Type;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Query {
+	object_name: String,
+	function: Option<FunctionCall>,
+}
+impl Query {
+	pub fn new<S: Into<String>>(object_name: S, function: Option<FunctionCall>) -> Query {
+		Query {
+			object_name: object_name.into(),
+			function,
+		}
+	}
 }
 
-#[derive(Debug)]
-pub enum FunctionType {
-	Table,
-	Read,
-}
-impl FunctionType {}
-
-#[derive(Debug)]
-pub struct Function {
-	ty: FunctionType,
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionCall {
+	function: &'static FunctionDef,
 	args: Vec<Value>,
-	chained: Option<Box<Function>>,
+	chained: Option<Box<FunctionCall>>,
 }
-impl Function {
-	pub fn new(ty: FunctionType, args: Vec<Value>, chained: Option<Function>) -> Function {
-		Function {
-			ty,
+impl FunctionCall {
+	pub fn new(
+		function: &'static FunctionDef,
+		args: Vec<Value>,
+		chained: Option<FunctionCall>,
+	) -> FunctionCall {
+		FunctionCall {
+			function,
 			args,
 			chained: chained.map(Box::new),
 		}
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Value {
 	String(String),
 }

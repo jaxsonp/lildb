@@ -2,7 +2,10 @@ use std::io;
 
 #[derive(Debug)]
 pub enum Error {
+	/// File IO errors, wrapping around a `std::io::Error`
 	Io(io::Error),
+	/// Internal error, ideally should never thrown
+	Internal(String),
 }
 
 impl From<io::Error> for Error {

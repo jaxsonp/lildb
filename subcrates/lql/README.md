@@ -1,21 +1,28 @@
 
 # LQL - LilDB Query Language
 
+```
+db.table("Users").ensure_exists();
+
+Users.ensure_exists();
+
+<Users>.ensure_exists();
+
+(Users).ensure_exists();
+
+[Users].ensure_exists();
+```
+
 ## Formal grammar
 
 LL(1) I think
 
 ```txt
-<query> ::= "db" <function> ";"
+<query> ::= <table> <function-call> ";"
 
-<function> ::=
-	"." <function-name> "(" <args> ")" <function> |
+<function-call> ::=
+	"." <function-name> "(" <args> ")" <function-call> |
 	null
-
-<function-name> ::=
-	"table" |
-	"read" |
-	...
 
 <function_args> ::=
 	<value> <more-function-args> |

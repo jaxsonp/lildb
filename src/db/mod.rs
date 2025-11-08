@@ -1,35 +1,24 @@
-mod disk_mgr;
+mod disk;
+mod objects;
+mod record;
 
-use std::{
-	fs::{self, File},
-	io,
-	path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 use crate::*;
-use disk_mgr::DiskManager;
+use disk::DiskManager;
 
-pub struct DbConnection {
+pub struct LilDbConnection {
+	opts: LilDbOpts,
 	disk: DiskManager,
 }
-impl DbConnection {
-	pub fn open_db(path: PathBuf) -> Result<DbConnection> {
+impl LilDbConnection {
+	pub fn open_db(path: PathBuf, opts: LilDbOpts) -> Result<LilDbConnection> {
 		let f = fs::OpenOptions::new()
 			.read(true)
 			.write(true)
-			.create_new(false)
+			.create(opts.create)
 			.open(path)?;
 		let disk = DiskManager::new(f)?;
-		Ok(DbConnection { disk })
-	}
-
-	pub fn create_db(path: PathBuf) -> Result<DbConnection> {
-		let f = fs::OpenOptions::new()
-			.read(true)
-			.write(true)
-			.create_new(true)
-			.open(path)?;
-		let disk = DiskManager::init_db(f)?;
-		Ok(DbConnection { disk })
+		Ok(LilDbConnection { opts, disk })
 	}
 }

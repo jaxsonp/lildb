@@ -10,43 +10,50 @@ pub trait ParseTreeNode: Debug {
 }
 
 #[derive(Debug)]
-pub enum ParseTreeQuery {
-	DB(ParseTreeFunction),
+pub struct ParseTreeQuery {
+	pub object: String,
+	pub function: Option<ParseTreeFunctionCall>,
 }
 impl ParseTreeNode for ParseTreeQuery {
 	type Product = query::Query;
 	fn validate(self) -> Result<Self::Product, String> {
-		match self {
-			Self::DB(f) => {
-				if let Some(f) = f.validate()? {
-					Ok(query::Query::DB(f))
-				} else {
-					Err("Query requires a function".to_string())
-				}
-			}
-		}
+		let function = match self.function {
+			Some(f) => f.validate()?,
+			None => None,
+		};
+		return Ok(query::Query::new(self.object, function));
 	}
 }
 
 #[derive(Debug)]
-pub enum ParseTreeFunction {
+pub enum ParseTreeFunctionCall {
 	Function {
-		ty: query::FunctionType,
+		name: String,
 		args: Box<ParseTreeFunctionArgs>,
-		chained: Box<ParseTreeFunction>,
+		chained: Box<ParseTreeFunctionCall>,
 	},
 	NoFunction,
 }
-impl ParseTreeNode for ParseTreeFunction {
-	type Product = Option<query::Function>;
+impl ParseTreeNode for ParseTreeFunctionCall {
+	type Product = Option<query::FunctionCall>;
 	fn validate(self) -> Result<Self::Product, String> {
-		use ParseTreeFunction::*;
+		use ParseTreeFunctionCall::*;
 		match self {
-			Function { ty, args, chained } => Ok(Some(query::Function::new(
-				ty,
-				args.validate()?,
-				chained.validate()?,
-			))),
+			Function {
+				name,
+				args,
+				chained,
+			} => {
+				if let Some(f) = query::functions::find_function(&name) {
+					Ok(Some(query::FunctionCall::new(
+						f,
+						args.validate()?,
+						chained.validate()?,
+					)))
+				} else {
+					Err(format!("Unrecognized function: \"{}\"", name))
+				}
+			}
 			NoFunction => Ok(None),
 		}
 	}

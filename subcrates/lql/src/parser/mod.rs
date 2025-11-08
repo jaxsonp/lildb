@@ -9,8 +9,6 @@
 //!
 pub mod tree;
 
-use lildb::query::FunctionType;
-
 use crate::lexer::{Token, TokenType, Tokens};
 
 use tree::*;
@@ -22,86 +20,72 @@ use tree::*;
 type ParseOutcome<T> = Result<Option<T>, String>;
 
 pub fn try_parse_query(tokens: &mut Tokens) -> ParseOutcome<ParseTreeQuery> {
-	if let Some(Token {
-		ty: TokenType::Word(word),
+	let Some(Token {
+		ty: TokenType::Word(object),
 		..
-	}) = &tokens.peek()
-		&& word.eq_ignore_ascii_case("db")
-	{
-		tokens.next();
+	}) = tokens.next()
+	else {
+		return Err(format!(
+			"Expected object (line {}, col {})",
+			tokens.last_loc.line, tokens.last_loc.start_col
+		));
+	};
 
-		let Some(f) = try_parse_function(tokens)? else {
-			return Err(format!(
-				"Expected function (line {}, col {})",
-				tokens.last_loc.line, tokens.last_loc.start_col
-			));
-		};
+	let function = try_parse_function_call(tokens)?;
 
-		tokens.expect(TokenType::Semicolon)?;
+	tokens.expect(TokenType::Semicolon)?;
 
-		return Ok(Some(ParseTreeQuery::DB(f)));
-	}
-	Ok(None)
+	return Ok(Some(ParseTreeQuery { object, function }));
 }
 
-fn try_parse_function(tokens: &mut Tokens) -> ParseOutcome<ParseTreeFunction> {
+fn try_parse_function_call(tokens: &mut Tokens) -> ParseOutcome<ParseTreeFunctionCall> {
 	if let Some(Token {
 		ty: TokenType::Period,
 		..
 	}) = &tokens.peek()
 	{
-		// dot function
 		let _ = tokens.next();
-
-		let Some(ty) = try_parse_function_name(tokens)? else {
-			return Ok(None);
-		};
-		tokens.expect(TokenType::OpenParen)?;
-		let Some(args) = try_parse_function_args(tokens)? else {
-			return Err(format!(
-				"Expected function arguments (line {}, col {})",
-				tokens.last_loc.line, tokens.last_loc.start_col
-			));
-		};
-		tokens.expect(TokenType::CloseParen)?;
-
-		let Some(chained_function) = try_parse_function(tokens)? else {
-			return Err(format!(
-				"Expected function or null (line {}, col {})",
-				tokens.last_loc.line, tokens.last_loc.start_col
-			));
-		};
-
-		Ok(Some(ParseTreeFunction::Function {
-			ty,
-			args: Box::new(args),
-			chained: Box::new(chained_function),
-		}))
 	} else {
-		// empty
-		Ok(Some(ParseTreeFunction::NoFunction))
+		return Ok(Some(ParseTreeFunctionCall::NoFunction));
 	}
-}
 
-fn try_parse_function_name(tokens: &mut Tokens) -> ParseOutcome<FunctionType> {
-	if let Some(Token {
-		ty: TokenType::Word(word),
+	let name = if let Some(Token {
+		ty: TokenType::Word(_),
 		..
-	}) = tokens.peek()
+	}) = &tokens.peek()
 	{
-		let ty = match word.as_str() {
-			"read" => FunctionType::Read,
-			"table" => FunctionType::Table,
-			_ => {
-				return Ok(None);
-			}
+		let TokenType::Word(s) = tokens.next().unwrap().ty else {
+			unreachable!();
 		};
-		// consume word
-		tokens.next();
-		return Ok(Some(ty));
-	}
+		s
+	} else {
+		return Err(format!(
+			"Expected function name (line {}, col {})",
+			tokens.last_loc.line, tokens.last_loc.start_col
+		));
+	};
 
-	return Ok(None);
+	tokens.expect(TokenType::OpenParen)?;
+	let Some(args) = try_parse_function_args(tokens)? else {
+		return Err(format!(
+			"Expected function arguments (line {}, col {})",
+			tokens.last_loc.line, tokens.last_loc.start_col
+		));
+	};
+	tokens.expect(TokenType::CloseParen)?;
+
+	let Some(chained_function) = try_parse_function_call(tokens)? else {
+		return Err(format!(
+			"Expected function or null (line {}, col {})",
+			tokens.last_loc.line, tokens.last_loc.start_col
+		));
+	};
+
+	Ok(Some(ParseTreeFunctionCall::Function {
+		name,
+		args: Box::new(args),
+		chained: Box::new(chained_function),
+	}))
 }
 
 fn try_parse_function_args(tokens: &mut Tokens) -> ParseOutcome<ParseTreeFunctionArgs> {
